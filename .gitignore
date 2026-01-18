@@ -1,0 +1,18 @@
+data/
+
+logs/
+results/
+__pycache__/
+.idea
+*/.ipynb_checkpoints
+*.tc.*
+*.tc_backward.*
+*.log
+*.bak
+
+# training outputs
+outputs/
+images/
+# model checkpoints
+*.pt
+ 

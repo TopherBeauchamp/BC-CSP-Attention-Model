@@ -1,0 +1,12 @@
+# run: conda env create --file environment.yml
+name: attention_tsp
+channels:
+- pytorch
+dependencies:
+- python=3.8
+- anaconda
+- tqdm
+- pytorch
+- torchvision
+- pip:
+  - tensorboard_logger
