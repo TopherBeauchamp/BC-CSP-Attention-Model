@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+title: "BC-CSP-Attention-Model"
+message: "If you use this code, please cite the following works."
+type: software
+
+references:
+  - type: conference-paper
+    title: "Attention, Learn to Solve Routing Problems!"
+    authors:
+      - family-names: Kool
+        given-names: Wouter
+      - family-names: van Hoof
+        given-names: Herke
+      - family-names: Welling
+        given-names: Max
+    year: 2019
+    conference:
+      name: International Conference on Learning Representations
+    url: https://openreview.net/forum?id=ByxBFsRqYm
+
+  - type: software
+    title: "CSP_Attention"
+    authors:
+      - family-names: Chen
+        given-names: Kevin
+    url: https://github.com/kevin031060/CSP_Attention
