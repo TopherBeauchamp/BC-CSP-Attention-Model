@@ -160,6 +160,18 @@ class AttentionModel(nn.Module):
 
         return cost, ll
 
+    def sample_many(self, input, batch_rep=1, iter_rep=1):
+        # utils.functions.sample_many expects:
+        #   sample_many(inner_func, get_cost_func, input, ...)
+        # where inner_func returns (_log_p, pi)
+        return sample_many(
+            inner_func=lambda x: self._inner_rnn(x, self.embedder(self._init_embed(x))[0]),
+            get_cost_func=self.problem.get_costs,
+            input=input,
+            batch_rep=batch_rep,
+            iter_rep=iter_rep
+        )
+
 
     def precompute_fixed(self, input):
         embeddings, _ = self.embedder(self._init_embed(input))

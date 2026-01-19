@@ -11,6 +11,9 @@ from torch.utils.data import DataLoader
 import time
 from datetime import timedelta
 from utils.functions import parse_softmax_temperature
+import pickle
+from LS.LS1 import LS as LS1, dist as ls1_dist
+
 mp = torch.multiprocessing.get_context('spawn')
 
 
@@ -51,6 +54,52 @@ def eval_dataset_mp(args):
 
 def eval_dataset(dataset_path, width, softmax_temp, opts):
     # Even with multiprocessing, we load the model here since it contains the name where to write results
+    if opts.baseline is not None:
+        assert opts.baseline.lower() == "ls1", "Only baseline supported right now: ls1"
+
+        # Load dataset directly (list of dicts or list of loc arrays)
+        with open(dataset_path, "rb") as f:
+            data = pickle.load(f)
+
+        data = data[opts.offset: opts.offset + opts.val_size]
+
+        start_all = time.time()
+        costs = []
+        tours = []
+        durations = []
+
+        for inst in tqdm(data, disable=opts.no_progress_bar):
+            t0 = time.time()
+
+            if isinstance(inst, dict):
+                loc = np.asarray(inst["loc"], dtype=np.float32)
+            else:
+                loc = np.asarray(inst, dtype=np.float32)
+
+            tour = LS1(loc, cover_range=7, radius=opts.radius, print_enable=False)
+            cost = ls1_dist(loc, tour)
+
+            durations.append(time.time() - t0)
+            costs.append(cost)
+            tours.append(tour.tolist())
+
+        print("Average cost: {} +- {}".format(np.mean(costs), 2 * np.std(costs) / np.sqrt(len(costs))))
+        print("Average serial duration: {} +- {}".format(
+            np.mean(durations), 2 * np.std(durations) / np.sqrt(len(durations))))
+        print("Calculated total duration: {}".format(timedelta(seconds=int(time.time() - start_all))))
+
+        # Optional: save results in same format
+        results = list(zip(costs, tours, durations))
+        parallelism = 1
+        dataset_basename, ext = os.path.splitext(os.path.split(dataset_path)[-1])
+        results_dir = os.path.join(opts.results_dir, "csp", dataset_basename)
+        os.makedirs(results_dir, exist_ok=True)
+        out_file = os.path.join(results_dir, f"{dataset_basename}-ls1-radius{opts.radius}-"
+                                f"{opts.offset}-{opts.offset + len(costs)}{ext}")
+        save_dataset((results, parallelism), out_file)
+
+        return costs, tours, durations
+
     model, _ = load_model(opts.model)
     use_cuda = torch.cuda.is_available() and not opts.no_cuda
     if opts.multiprocessing:
@@ -161,13 +210,17 @@ def _eval_dataset(model, dataset, width, softmax_temp, opts, device):
         duration = time.time() - start
         for seq, cost in zip(sequences, costs):
             if model.problem.NAME == "tsp":
-                seq = seq.tolist()  # No need to trim as all are same length
+                seq = seq.tolist()  # fixed length
             elif model.problem.NAME in ("cvrp", "sdvrp"):
-                seq = np.trim_zeros(seq).tolist() + [0]  # Add depot
+                seq = np.trim_zeros(seq).tolist() + [0]  # add depot
             elif model.problem.NAME in ("op", "pctsp"):
-                seq = np.trim_zeros(seq)  # We have the convention to exclude the depot
+                seq = np.trim_zeros(seq).tolist()  # exclude depot
+            elif model.problem.NAME == "csp":
+                # CSP sequences are padded with -1 for unused steps
+                seq = seq[seq > -1].tolist()
             else:
                 assert False, "Unkown problem: {}".format(model.problem.NAME)
+
             # Note VRP only
             results.append((cost, seq, duration))
 
@@ -203,6 +256,10 @@ if __name__ == "__main__":
     parser.add_argument('--results_dir', default='results', help="Name of results directory")
     parser.add_argument('--multiprocessing', action='store_true',
                         help='Use multiprocessing to parallelize over multiple GPUs')
+    parser.add_argument('--baseline', type=str, default=None,
+                        help="Run a baseline instead of the model (e.g. ls1)")
+    parser.add_argument('--radius', type=float, default=0.15,
+                        help="Radius for CSP baselines (ls1)")
 
     opts = parser.parse_args()
 

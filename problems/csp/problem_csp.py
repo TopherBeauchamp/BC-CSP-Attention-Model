@@ -89,7 +89,29 @@ class CSPDataset(Dataset):
 
             with open(filename, 'rb') as f:
                 data = pickle.load(f)
-                self.data = [torch.FloatTensor(row) for row in (data[offset:offset+num_samples])]
+                rows = data[offset:offset + num_samples]
+
+                if isinstance(rows[0], dict):
+                    # New format: list of dicts
+                    self.data = [
+                        {
+                            'loc': torch.tensor(r['loc'], dtype=torch.float),
+                            'cover_range': r.get('cover_range', cover_range),
+                            'radius': torch.tensor(r.get('radius', [[0.15]]), dtype=torch.float)
+                        }
+                        for r in rows
+                    ]
+                else:
+                    # Old format: list of (N,2) arrays/lists
+                    radius = 0.15
+                    self.data = [
+                        {
+                            'loc': torch.tensor(r, dtype=torch.float),
+                            'cover_range': cover_range,
+                            'radius': torch.tensor([[radius]], dtype=torch.float)
+                        }
+                        for r in rows
+                    ]
         else:
             # Sample points randomly in [0, 1] square
             radius = 0.15  # <-- pick your covering distance

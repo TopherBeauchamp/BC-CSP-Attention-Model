@@ -93,6 +93,23 @@ def generate_pctsp_data(dataset_size, pctsp_size, penalty_factor=3):
         stochastic_prize.tolist()
     ))
 
+# ---- NEW: CSP generator (dict format, matches CSPDataset) ----
+def generate_csp_data(dataset_size, graph_size, cover_range=7, radius=0.15):
+    # loc: (dataset_size, graph_size, 2) as lists
+    loc = np.random.uniform(size=(dataset_size, graph_size, 2)).tolist()
+
+    # Match CSPDataset dict schema exactly:
+    # {'loc': ..., 'cover_range': cover_range, 'radius': [[radius]]}
+    # radius as [[r]] mirrors torch.tensor([[radius]]) in CSPDataset
+    r = [[float(radius)]]
+    return [
+        {
+            "loc": l,
+            "cover_range": int(cover_range),
+            "radius": r
+        }
+        for l in loc
+    ]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -100,8 +117,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", default='data', help="Create datasets in data_dir/problem (default 'data')")
     parser.add_argument("--name", type=str, required=True, help="Name to identify dataset")
     parser.add_argument("--problem", type=str, default='all',
-                        help="Problem, 'tsp', 'vrp', 'pctsp' or 'op_const', 'op_unif' or 'op_dist'"
-                             " or 'all' to generate all")
+                        help="Problem: 'tsp', 'vrp', 'pctsp', 'op', 'csp' or 'all'")
     parser.add_argument('--data_distribution', type=str, default='all',
                         help="Distributions to generate for problem, default 'all'.")
 
@@ -111,20 +127,30 @@ if __name__ == "__main__":
     parser.add_argument("-f", action='store_true', help="Set true to overwrite")
     parser.add_argument('--seed', type=int, default=1234, help="Random seed")
 
+    # NEW: CSP-specific args
+    parser.add_argument('--cover_range', type=int, default=7,
+                        help="CSP cover_range (kept for compatibility; radius-based CSP ignores it)")
+    parser.add_argument('--radius', type=float, default=0.15,
+                        help="CSP radius (coverage distance)")
+
     opts = parser.parse_args()
 
-    assert opts.filename is None or (len(opts.problems) == 1 and len(opts.graph_sizes) == 1), \
+    # Fix: original code had opts.problems (typo). Use opts.problem here.
+    assert opts.filename is None or (opts.problem != 'all' and len(opts.graph_sizes) == 1), \
         "Can only specify filename when generating a single dataset"
 
     distributions_per_problem = {
         'tsp': [None],
         'vrp': [None],
         'pctsp': [None],
-        'op': ['const', 'unif', 'dist']
+        'op': ['const', 'unif', 'dist'],
+        'csp': [None]
     }
+
     if opts.problem == 'all':
         problems = distributions_per_problem
     else:
+        assert opts.problem in distributions_per_problem, f"Unknown problem: {opts.problem}"
         problems = {
             opts.problem:
                 distributions_per_problem[opts.problem]
@@ -154,15 +180,20 @@ if __name__ == "__main__":
                 if problem == 'tsp':
                     dataset = generate_tsp_data(opts.dataset_size, graph_size)
                 elif problem == 'vrp':
-                    dataset = generate_vrp_data(
-                        opts.dataset_size, graph_size)
+                    dataset = generate_vrp_data(opts.dataset_size, graph_size)
                 elif problem == 'pctsp':
                     dataset = generate_pctsp_data(opts.dataset_size, graph_size)
-                elif problem == "op":
+                elif problem == 'op':
                     dataset = generate_op_data(opts.dataset_size, graph_size, prize_type=distribution)
+                elif problem == 'csp':
+                    dataset = generate_csp_data(
+                        opts.dataset_size,
+                        graph_size,
+                        cover_range=opts.cover_range,
+                        radius=opts.radius
+                    )
                 else:
                     assert False, "Unknown problem: {}".format(problem)
 
                 print(dataset[0])
-
                 save_dataset(dataset, filename)
