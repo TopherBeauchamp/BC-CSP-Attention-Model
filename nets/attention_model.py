@@ -65,6 +65,7 @@ class AttentionModel(nn.Module):
         self.decode_type = None
         self.temp = 1.0
         self.allow_partial = problem.NAME == 'sdvrp'
+        self.is_bccsp = problem.NAME == 'bccsp'
         self.is_vrp = problem.NAME == 'cvrp' or problem.NAME == 'sdvrp'
         self.is_orienteering = problem.NAME == 'op'
         self.is_pctsp = problem.NAME == 'pctsp'
@@ -80,7 +81,7 @@ class AttentionModel(nn.Module):
         self.shrink_size = shrink_size
         self.tmp = None
         # Problem specific context parameters (placeholder and step context dimension)
-        if self.is_vrp or self.is_orienteering or self.is_pctsp:
+        if self.is_vrp or self.is_orienteering or self.is_pctsp or self.is_bccsp:
             # Embedding of last node + remaining_capacity / remaining length / remaining prize to collect
             step_context_dim = embedding_dim + 1
 
@@ -183,8 +184,16 @@ class AttentionModel(nn.Module):
     def _init_embed(self, input):
         if self.is_csp:
             return self.init_embed(input['loc'])
-        # TSP
-        return self.init_embed(input)
+        elif self.is_bccsp:  # ADD THIS
+            return torch.cat((
+                self.init_embed_depot(input['depot'])[:, None, :],
+                self.init_embed(torch.cat((
+                    input['loc'],
+                    input['packets'][:, :, None]  # Add packets as 3rd feature
+                ), -1))
+            ), 1)
+        else:
+            return self.init_embed(input)
 
 
     def _select_node(self, probs, mask):
@@ -301,8 +310,12 @@ class AttentionModel(nn.Module):
         current_node = state.get_current_node()
         batch_size, num_steps = current_node.size()
         if state.i.item() == 0:
-            # decoder_hidden = self.x0.expand(batch_size, -1, -1)
-            decoder_input = self.first_placeholder[None, None, :].expand(batch_size, 1, -1)
+            # For CSP: use placeholder
+            if self.is_csp:
+                decoder_input = self.first_placeholder[None, None, :].expand(batch_size, 1, -1)
+            # For VRP/OP/PCTSP/BCCSP: use depot embedding (index 0)
+            else:
+                decoder_input = fixed.node_embeddings[:, 0:1, :]  # Depot is always index 0
         else:
             decoder_input = fixed.node_embeddings.gather(
                 1,
