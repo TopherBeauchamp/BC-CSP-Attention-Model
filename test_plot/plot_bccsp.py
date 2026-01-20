@@ -55,14 +55,19 @@ def render_bccsp_solution(dataset_item, tour, save_path=None, show=True, title=N
     
     # Calculate tour length
     coords_with_depot = np.vstack([depot[None, :], loc])  # (N+1, 2)
-    tour_coords = coords_with_depot[tour]
+
+    # For visualization/length, the tour implicitly starts at depot even if the first action isn't 0
+    display_tour = tour
+    if len(display_tour) > 0 and display_tour[0] != 0:
+        display_tour = [0] + display_tour
+
+    tour_coords = coords_with_depot[display_tour]
+
     if len(tour_coords) > 1:
         tour_length = np.sum(np.sqrt(np.sum((tour_coords[1:] - tour_coords[:-1])**2, axis=1)))
-        # Add return to depot if not already there
-        if tour[-1] != 0:
-            tour_length += np.sqrt(np.sum((tour_coords[-1] - depot)**2))
     else:
         tour_length = 0.0
+
     
     # Calculate total collected packets
     total_packets = np.sum(packets[covered])
@@ -79,8 +84,34 @@ def render_bccsp_solution(dataset_item, tour, save_path=None, show=True, title=N
     
     # Draw tour path
     if len(tour_coords) > 1:
-        ax.plot(tour_coords[:, 0], tour_coords[:, 1], 
-               'k-', linewidth=2, alpha=0.6, label='Tour path')
+        ax.plot(tour_coords[:, 0], tour_coords[:, 1],
+                'k-', linewidth=2, alpha=0.6, label='Tour path')
+
+        # Draw direction arrows along the path
+        for i in range(len(tour_coords) - 1):
+            x0, y0 = tour_coords[i]
+            x1, y1 = tour_coords[i + 1]
+
+            # Midpoint of the segment
+            xm = 0.5 * (x0 + x1)
+            ym = 0.5 * (y0 + y1)
+
+            dx = x1 - x0
+            dy = y1 - y0
+
+            ax.annotate(
+                "",
+                xy=(xm + 0.15 * dx, ym + 0.15 * dy),
+                xytext=(xm - 0.15 * dx, ym - 0.15 * dy),
+                arrowprops=dict(
+                    arrowstyle="->",
+                    color="black",
+                    lw=1.5,
+                    alpha=0.8
+                ),
+                zorder=9
+            )
+
         # Close the tour back to depot
         if tour[-1] != 0:
             ax.plot([tour_coords[-1, 0], depot[0]], 
@@ -174,9 +205,22 @@ if __name__ == "__main__":
     with torch.no_grad():
         cost, ll, tours = model(batch, return_pi=True)
     
-    print(f"\nAverage collected packets: {-cost.mean().item():.2f}")
-    print(f"Solutions range: {-cost.max().item():.2f} to {-cost.min().item():.2f} packets\n")
-    
+    print("\n=== PRINTING TOURS ===")
+
+    for i in range(tours.size(0)):
+        tour_raw = tours[i].cpu()
+        tour_valid = tour_raw[tour_raw >= 0]
+
+        print(f"\nInstance {i}")
+        print("Raw tour tensor:", tour_raw.tolist())
+        print("Valid tour (no -1):", tour_valid.tolist())
+
+        if len(tour_valid) > 0:
+            print("Last action:", int(tour_valid[-1].item()))
+
+        print(f"\nAverage collected packets: {-cost.mean().item():.2f}")
+        print(f"Solutions range: {-cost.max().item():.2f} to {-cost.min().item():.2f} packets\n")
+        
     # Visualize
     for i in range(min(args.n, 3)):
         dataset_item = {
