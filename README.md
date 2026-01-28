@@ -1,6 +1,12 @@
 # Acknowledgements
 This repository builds upon the attention-based routing framework of Kool et al. (ICLR 2019) and the CSP extension introduced in the CSP_Attention repository by Kevin Chen. 
 
+
+# BC-CSP Usage
+In order to get a quick test running to see if the BC-CSP implementation is working on your local environment, you can run this quick test:
+
+
+
 # Learn to Solve Covering Salesman Problems with Attention Model and Deep Reinforcement Learning!
 
 Attention based model for learning to solve the Travelling Salesman Problem (TSP) and the Vehicle Routing Problem (VRP), Orienteering Problem (OP) and (Stochastic) Prize Collecting TSP (PCTSP). Training with REINFORCE with greedy rollout baseline.

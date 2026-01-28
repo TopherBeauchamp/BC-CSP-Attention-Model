@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from torch.utils.data import DataLoader
 from utils import load_model, move_to
 from problems.bccsp.problem_bccsp import BCCSPDataset
+from problems.bccsp.problem_bccsp import BCCSP
 
 
 def render_bccsp_solution(dataset_item, tour, save_path=None, show=True, title=None):
@@ -205,6 +206,14 @@ if __name__ == "__main__":
     with torch.no_grad():
         cost, ll, tours = model(batch, return_pi=True)
     
+    problem = BCCSP()
+
+    with torch.no_grad():
+        cost2, _ = problem.get_costs(batch, tours)
+
+    diff = (cost2 - cost).abs().max().item()
+    print(f"\n[OFFICIAL COST CHECK] max|problem.get_costs - model_cost| = {diff:.8f}")
+
     print("\n=== PRINTING TOURS ===")
 
     for i in range(tours.size(0)):
