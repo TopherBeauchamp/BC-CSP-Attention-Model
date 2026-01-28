@@ -93,7 +93,6 @@ def generate_pctsp_data(dataset_size, pctsp_size, penalty_factor=3):
         stochastic_prize.tolist()
     ))
 
-# ---- NEW: CSP generator (dict format, matches CSPDataset) ----
 def generate_csp_data(dataset_size, graph_size, cover_range=7, radius=0.15):
     # loc: (dataset_size, graph_size, 2) as lists
     loc = np.random.uniform(size=(dataset_size, graph_size, 2)).tolist()
@@ -111,13 +110,55 @@ def generate_csp_data(dataset_size, graph_size, cover_range=7, radius=0.15):
         for l in loc
     ]
 
+
+def generate_bccsp_data(dataset_size, graph_size, radius=0.15, max_length=None, 
+                        packets_low=1, packets_high=100):
+    """
+    Generate BCCSP (Budget-Constrained Covering Salesman Problem) data
+    
+    Returns a list of tuples: (loc, packets, max_length, radius)
+    This format matches what BCCSPDataset expects in its pickle file loader.
+    
+    Args:
+        dataset_size: Number of instances
+        graph_size: Number of sensor nodes (N)
+        radius: Coverage radius (default 0.15)
+        max_length: Budget constraint (default based on graph_size)
+        packets_low: Minimum packet count per sensor (default 1)
+        packets_high: Maximum packet count per sensor (default 100)
+    """
+    # Default max_length based on graph_size (matching problem_bccsp.py defaults)
+    if max_length is None:
+        MAX_LENGTHS = {20: 2.0, 50: 3.0, 100: 4.0}
+        max_length = MAX_LENGTHS.get(graph_size, 3.0)
+    
+    # Generate sensor locations (uniform [0,1]^2)
+    loc = np.random.uniform(size=(dataset_size, graph_size, 2))
+    
+    # Generate packet counts (integer in [packets_low, packets_high])
+    packets = np.random.randint(low=packets_low, high=packets_high + 1, 
+                                size=(dataset_size, graph_size))
+    
+    # Return as list of tuples matching BCCSPDataset pickle format
+    # (loc, packets, max_length, radius)
+    return [
+        (
+            loc[i].tolist(),
+            packets[i].tolist(),
+            float(max_length),
+            float(radius)
+        )
+        for i in range(dataset_size)
+    ]
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--filename", help="Filename of the dataset to create (ignores datadir)")
     parser.add_argument("--data_dir", default='data', help="Create datasets in data_dir/problem (default 'data')")
     parser.add_argument("--name", type=str, required=True, help="Name to identify dataset")
     parser.add_argument("--problem", type=str, default='all',
-                        help="Problem: 'tsp', 'vrp', 'pctsp', 'op', 'csp' or 'all'")
+                        help="Problem: 'tsp', 'vrp', 'pctsp', 'op', 'csp', 'bccsp' or 'all'")
     parser.add_argument('--data_distribution', type=str, default='all',
                         help="Distributions to generate for problem, default 'all'.")
 
@@ -132,10 +173,15 @@ if __name__ == "__main__":
                         help="CSP cover_range (kept for compatibility; radius-based CSP ignores it)")
     parser.add_argument('--radius', type=float, default=0.15,
                         help="CSP radius (coverage distance)")
+    parser.add_argument('--max_length', type=float, default=None,
+                        help="Budget constraint for BCCSP (default: auto based on graph_size)")
+    parser.add_argument('--packets_low', type=int, default=1,
+                        help="Minimum packet count per sensor for BCCSP (default 1)")
+    parser.add_argument('--packets_high', type=int, default=100,
+                        help="Maximum packet count per sensor for BCCSP (default 100)")
 
     opts = parser.parse_args()
 
-    # Fix: original code had opts.problems (typo). Use opts.problem here.
     assert opts.filename is None or (opts.problem != 'all' and len(opts.graph_sizes) == 1), \
         "Can only specify filename when generating a single dataset"
 
@@ -144,7 +190,8 @@ if __name__ == "__main__":
         'vrp': [None],
         'pctsp': [None],
         'op': ['const', 'unif', 'dist'],
-        'csp': [None]
+        'csp': [None],
+        'bccsp': [None] 
     }
 
     if opts.problem == 'all':
@@ -191,6 +238,15 @@ if __name__ == "__main__":
                         graph_size,
                         cover_range=opts.cover_range,
                         radius=opts.radius
+                    )
+                elif problem == 'bccsp':
+                    dataset = generate_bccsp_data(
+                        opts.dataset_size,
+                        graph_size,
+                        radius=opts.radius,
+                        max_length=opts.max_length,
+                        packets_low=opts.packets_low,
+                        packets_high=opts.packets_high
                     )
                 else:
                     assert False, "Unknown problem: {}".format(problem)

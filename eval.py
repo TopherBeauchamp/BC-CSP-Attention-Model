@@ -215,11 +215,11 @@ def _eval_dataset(model, dataset, width, softmax_temp, opts, device):
                 seq = np.trim_zeros(seq).tolist() + [0]  # add depot
             elif model.problem.NAME in ("op", "pctsp"):
                 seq = np.trim_zeros(seq).tolist()  # exclude depot
-            elif model.problem.NAME == "csp":
-                # CSP sequences are padded with -1 for unused steps
+            elif model.problem.NAME in ("csp", "bccsp"):
+                # CSP/BCCSP sequences are padded with -1 for unused steps
                 seq = seq[seq > -1].tolist()
             else:
-                assert False, "Unkown problem: {}".format(model.problem.NAME)
+                assert False, "Unknown problem: {}".format(model.problem.NAME)
 
             # Note VRP only
             results.append((cost, seq, duration))
@@ -259,7 +259,7 @@ if __name__ == "__main__":
     parser.add_argument('--baseline', type=str, default=None,
                         help="Run a baseline instead of the model (e.g. ls1)")
     parser.add_argument('--radius', type=float, default=0.15,
-                        help="Radius for CSP baselines (ls1)")
+                        help="Radius for CSP/BCCSP baselines (ls1)")
 
     opts = parser.parse_args()
 
