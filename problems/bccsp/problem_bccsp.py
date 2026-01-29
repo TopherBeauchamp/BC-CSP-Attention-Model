@@ -20,15 +20,16 @@ class BCCSP(object):
     @staticmethod
     def get_costs(dataset, pi):
         """
-        dataset: dict with keys
+        dataset = {
+            "loc": (B, N, 2),           B instances, N sensors, 2D coordinates
+            "packets": (B, N),           B instances, N packet counts
+            "depot": (B, 2),             B instances, depot at (0,0)
+            "max_length": (B,) or (B,1), B instances, scalar budget per instance
+            "radius": scalar or (B,)     Coverage radius (can be same for all)
+        }
 
-        - loc: (B, N, 2)
-        - packets: (B, N) float (originally integer 1...100)
-        - depot: (B, 2) (expected to be zeros)
-        - max_length: (B,) or (B, 1)
-        - radius: scalar tensor or (B,) or (B,1)
-        
-        pi: (B, T) sequence of actions in {0..N} where 0 is depot, 1..N correspond to 
+        pi: (B, T)                       B instances, T-length action sequences
+                                         Actions are in {0..N} where 0=depot, 1..N=sensors
         loc[*, idx-1] should end at depot (0). (state enforces this during decoding)
         """
 
@@ -188,7 +189,7 @@ class BCCSPDataset(Dataset):
         super(BCCSPDataset, self).__init__()
 
         if max_length is None:
-            # You can tune these; OP uses {20:2,50:3,100:4}. :contentReference[oaicite:4]{index=4}
+            # You can tune these; OP uses {20:2,50:3,100:4}. 
             MAX_LENGTHS = {20: 2.0, 50: 3.0, 100: 4.0}
             max_length = MAX_LENGTHS.get(size, 3.0)
 

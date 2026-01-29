@@ -4,23 +4,23 @@ from utils.boolmask import mask_long2bool, mask_long_scatter
 
 class StateBCCSP(NamedTuple):
     # Fixed Input 
-    coords: torch.Tensor      # (B, N+1, 2) depot + loc
-    loc: torch.Tensor         # (B, N, 2) loc only
-    packets: torch.Tensor     # (B, N) packets per sensor node
-    radius: torch.Tensor      # (B,) scalar radius per instance
+    coords: torch.Tensor      # (B, N+1, 2) All locations: depot + N sensors
+    loc: torch.Tensor         # (B, N, 2) Just the N sensor locations
+    packets: torch.Tensor     # (B, N) Packet counts for N sensors
+    radius: torch.Tensor      # (B,) Scalar per instance
     max_length: torch.Tensor  # (B, N+1) per-node feasibility threshold (like OP's max_length trick)
 
     # For beam/multi-copy
-    ids: torch.Tensor
+    ids: torch.Tensor   # (B,1) Batch indices (for beam search/shrinking)
 
     # State
-    prev_a: torch.Tensor
-    visited_: torch.Tensor
-    lengths: torch.Tensor
-    cur_coord: torch.Tensor
-    covered_: torch.Tensor       # (B, 1, N) bool mask of covered sensors
-    cur_total_covered: torch.Tensor
-    i: torch.Tensor
+    prev_a: torch.Tensor            # (B, 1) Previous action (which node was selected)
+    visited_: torch.Tensor          # (B, 1 , N+1) Boolean mask of visited nodes (depot + sensors)
+    lengths: torch.Tensor           # (B, 1) Current tour length
+    cur_coord: torch.Tensor         #(B, 1, 2) Current position (x, y)
+    covered_: torch.Tensor          # (B, 1, N) bool mask of covered sensors
+    cur_total_covered: torch.Tensor # (B, 1) Cumulative coverage reward 
+    i: torch.Tensor                 # (1,) Step counter (Scalar)
 
     @property
     def visited(self):
