@@ -148,7 +148,7 @@ class BCCSP(object):
         return beam_search(state, beam_size, propose_expansions)
 
 
-def generate_instance(size, radius=0.15, max_length=2.0, packets_low=1, packets_high=100):
+def generate_instance(size, radius=0.15, max_length=1.8, packets_low=1, packets_high=100):
     """
     size: number of sensor nodes
     radius: scalar
@@ -172,7 +172,7 @@ def generate_instance(size, radius=0.15, max_length=2.0, packets_low=1, packets_
 class BCCSPDataset(Dataset):
 
     def __init__(self, filename=None, size=50, num_samples=1000000, offset=0,
-                 radius=0.15, max_length=None, distribution=None):
+                 radius=0.15, max_length=1.8, distribution=None):
         """
         If filename is provided, expects pkl containing tuples:
           (loc, packets, max_length, radius)
@@ -190,8 +190,7 @@ class BCCSPDataset(Dataset):
 
         if max_length is None:
             # You can tune these; OP uses {20:2,50:3,100:4}. 
-            MAX_LENGTHS = {20: 2.0, 50: 3.0, 100: 4.0}
-            max_length = MAX_LENGTHS.get(size, 3.0)
+            max_length = 1.8
 
         if filename is not None:
             assert os.path.splitext(filename)[1] == ".pkl"
