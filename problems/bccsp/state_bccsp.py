@@ -203,31 +203,47 @@ class StateBCCSP(NamedTuple):
     
     def get_dynamic(self):
         """
-        Dynamic context: (B, 1, N+1) 
-        - Depot gets 0
-        - Sensors get value based on uncovered packets in their radius
+        Dynamic context: (B_cur, 1, N+1)
+        Depot gets 0
+        Sensors get marginal packets from uncovered sensors within radius
+
+        IMPORTANT: when shrinking/beam-searching, self.ids maps current batch -> original batch.
+        So we must index loc/packets/radius using ids.
         """
-        B = self.ids.size(0)
-        
-        # For each sensor node, estimate marginal coverage value
-        # This is approximate: how many uncovered packets are in radius?
-        dynamic = torch.zeros(B, 1, self.coords.size(1), device=self.ids.device)
-        
-        # Simple heuristic: nodes with more uncovered packets nearby = higher value
-        for b in range(B):
-            for j in range(self.loc.size(1)):  # for each sensor
-                if self.visited[b, 0, j + 1]:  # +1 because depot is index 0
-                    continue
-                
-                # Count uncovered packets within radius of node j
-                center = self.loc[b, j, :]
-                dist = (self.loc[b, :, :] - center[None, :]).norm(p=2, dim=-1)
-                in_range = dist <= self.radius[b]
-                uncovered_in_range = in_range & (~self.covered_[b, 0, :])
-                
-                marginal_packets = (self.packets[b, :] * uncovered_in_range.float()).sum()
-                dynamic[b, 0, j + 1] = marginal_packets  # j+1 because depot is 0
-        
-        # Normalize to [0, 1] range for stability
-        dynamic = dynamic / (dynamic.max() + 1e-8)
+        ids = self.ids.squeeze(-1)  # (B_cur,)
+        B = ids.size(0)
+        N = self.loc.size(1)
+        device = ids.device
+
+        # Select the correct rows for the *current* (possibly shrunken) batch
+        loc = self.loc[ids]            # (B_cur, N, 2)
+        packets = self.packets[ids]    # (B_cur, N)
+        radius = self.radius[ids]      # (B_cur,)
+
+        dynamic = torch.zeros(B, 1, N + 1, device=device)
+
+        # Pairwise sensor distances (B_cur, N, N)
+        distances = (loc[:, :, None, :] - loc[:, None, :, :]).norm(p=2, dim=-1)
+
+        # in_range[b, j, k] is True if k within radius of j
+        in_range = distances <= radius[:, None, None]  # (B_cur, N, N)
+
+        # uncovered sensors (B_cur, N) -- covered_ already matches current batch
+        uncovered = ~self.covered_[:, 0, :]  # (B_cur, N)
+
+        uncovered_in_range = in_range & uncovered[:, None, :]  # (B_cur, N, N)
+
+        # Marginal packets per center j: sum packets of uncovered sensors k in range
+        marginal_packets = (uncovered_in_range.float() * packets[:, None, :]).sum(dim=2)  # (B_cur, N)
+
+        # Zero out visited sensors (exclude depot)
+        visited_sensors = self.visited[:, 0, 1:]  # (B_cur, N)
+        marginal_packets = marginal_packets * (~visited_sensors).float()
+
+        dynamic[:, 0, 1:] = marginal_packets
+
+        # Normalize per-instance (cheaper + avoids cross-instance coupling)
+        max_val = dynamic[:, 0, :].amax(dim=1, keepdim=True).clamp(min=1e-8)  # (B_cur, 1)
+        dynamic = dynamic / max_val[:, None, :]  # (B_cur, 1, N+1)
+
         return dynamic

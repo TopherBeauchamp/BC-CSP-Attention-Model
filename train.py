@@ -14,6 +14,23 @@ from multiprocessing import Pool
 import multiprocessing
 import signal
 
+def dataloader_kwargs(opts):
+    use_cuda = torch.cuda.is_available() and getattr(opts, "use_cuda", False)
+    num_workers = 0 if os.name == "nt" else 10  # Windows safe, Linux fast
+
+    kw = dict(
+        num_workers=num_workers,
+        pin_memory=use_cuda,
+    )
+
+    # These are only valid when num_workers > 0
+    if num_workers > 0:
+        kw.update(
+            persistent_workers=True,
+            prefetch_factor=4,
+        )
+    return kw
+
 
 def initializer():
     """Ignore CTRL+C in the worker process."""
@@ -44,11 +61,17 @@ def rollout(model, dataset, opts):
             cost, _ = model(move_to(bat, opts.device))
         return cost.data.cpu()
 
+    dl = DataLoader(
+        dataset,
+        batch_size=opts.eval_batch_size,
+        **dataloader_kwargs(opts)
+    )
+
     return torch.cat([
         eval_model_bat(bat)
-        for bat
-        in tqdm(DataLoader(dataset, batch_size=opts.eval_batch_size), disable=opts.no_progress_bar)
+        for bat in tqdm(dl, disable=opts.no_progress_bar)
     ], 0)
+
 
 
 def clip_grad_norms(param_groups, max_norm=math.inf):
@@ -128,7 +151,11 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
                                   cover_range=opts.cover, seed=1234,
                                   sample_mode=True)
     training_dataset = baseline.wrap_dataset(dataset)
-    training_dataloader = DataLoader(training_dataset, batch_size=opts.batch_size, num_workers=0)
+    training_dataloader = DataLoader(
+        training_dataset,
+        batch_size=opts.batch_size,
+        **dataloader_kwargs(opts)
+    )
 
     # baseline LS
     # pool.terminate()
@@ -152,7 +179,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
             tb_logger,
             opts
         )
-        print("One batch:",time.time()-t1)
+       #print("One batch:",time.time()-t1)
         step += 1
 
     epoch_duration = time.time() - start_time

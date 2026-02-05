@@ -17,6 +17,85 @@ from LS.LS1 import LS as LS1, dist as ls1_dist
 mp = torch.multiprocessing.get_context('spawn')
 
 
+def compute_bccsp_metrics(dataset, tours):
+    """
+    Compute BCCSP metrics from dataset and tours.
+    
+    Returns:
+        packets_collected: list of packets collected per instance
+        distances: list of tour distances per instance
+        nodes_visited: list of number of nodes visited per instance
+    """
+    packets_collected = []
+    distances = []
+    nodes_visited = []
+    
+    for inst, tour in zip(dataset, tours):
+        # Parse instance
+        if isinstance(inst, tuple):
+            loc, packets, max_length, radius = inst
+            loc = np.asarray(loc)
+            packets = np.asarray(packets)
+        elif isinstance(inst, dict):
+            loc = np.asarray(inst["loc"])
+            packets = np.asarray(inst["packets"])
+            radius = float(inst.get("radius", 0.15))
+        else:
+            # Old CSP format
+            loc = np.asarray(inst)
+            packets = np.ones(len(loc)) * 50  # Default if not available
+            radius = 0.15
+        
+        # Compute covered packets
+        N = len(loc)
+        covered = np.zeros(N, dtype=bool)
+        
+        for visited_idx in tour:
+            if visited_idx < 0 or visited_idx >= N:
+                continue
+            # Mark all sensors within radius as covered
+            dists = np.linalg.norm(loc - loc[visited_idx], axis=1)
+            covered |= (dists <= radius)
+        
+        total_packets = np.sum(packets[covered])
+        
+        # Compute tour distance
+        if len(tour) == 0:
+            dist = 0.0
+        else:
+            depot = np.zeros(2)
+            tour_dist = 0.0
+            current = depot
+            for idx in tour:
+                if idx >= 0 and idx < N:
+                    tour_dist += np.linalg.norm(loc[idx] - current)
+                    current = loc[idx]
+            # Return to depot
+            tour_dist += np.linalg.norm(current - depot)
+            dist = tour_dist
+        
+        # Number of nodes visited
+        num_nodes = len([n for n in tour if n >= 0])
+        
+        packets_collected.append(total_packets)
+        distances.append(dist)
+        nodes_visited.append(num_nodes)
+    
+    return packets_collected, distances, nodes_visited
+
+
+def print_bccsp_results(packets_collected, distances, nodes_visited, durations, label="Results"):
+    """Print formatted BCCSP results."""
+    print("\n" + "=" * 80)
+    print(label)
+    print("=" * 80)
+    print(f"Average packets collected: {np.mean(packets_collected):.2f} ± {2 * np.std(packets_collected) / np.sqrt(len(packets_collected)):.2f}")
+    print(f"Average distance traveled: {np.mean(distances):.2f} ± {2 * np.std(distances) / np.sqrt(len(distances)):.2f}")
+    print(f"Average nodes visited: {np.mean(nodes_visited):.2f} ± {2 * np.std(nodes_visited) / np.sqrt(len(nodes_visited)):.2f}")
+    print(f"Average serial duration: {np.mean(durations):.4f} ± {2 * np.std(durations) / np.sqrt(len(durations)):.4f} s")
+    print("=" * 80 + "\n")
+
+
 def get_best(sequences, cost, ids=None, batch_size=None):
     """
     Ids contains [0, 0, 0, 1, 1, 2, ..., n, n, n] if 3 solutions found for 0th instance, 2 for 1st, etc
@@ -64,7 +143,7 @@ def eval_dataset(dataset_path, width, softmax_temp, opts):
         data = data[opts.offset: opts.offset + opts.val_size]
 
         start_all = time.time()
-        costs = []
+        costs = []  # Will be negative packets (for compatibility)
         tours = []
         durations = []
 
@@ -77,16 +156,19 @@ def eval_dataset(dataset_path, width, softmax_temp, opts):
                 loc = np.asarray(inst, dtype=np.float32)
 
             tour = LS1(loc, cover_range=7, radius=opts.radius, print_enable=False)
-            cost = ls1_dist(loc, tour)
+            cost = ls1_dist(loc, tour)  # This is distance, not packets
 
             durations.append(time.time() - t0)
             costs.append(cost)
             tours.append(tour.tolist())
 
-        print("Average cost: {} +- {}".format(np.mean(costs), 2 * np.std(costs) / np.sqrt(len(costs))))
-        print("Average serial duration: {} +- {}".format(
-            np.mean(durations), 2 * np.std(durations) / np.sqrt(len(durations))))
-        print("Calculated total duration: {}".format(timedelta(seconds=int(time.time() - start_all))))
+        # Compute BCCSP metrics
+        packets_collected, distances, nodes_visited = compute_bccsp_metrics(data, tours)
+        
+        # Print results
+        print_bccsp_results(packets_collected, distances, nodes_visited, durations, 
+                           label="Baseline (LS1) Results")
+        print(f"Total duration: {timedelta(seconds=int(time.time() - start_all))}")
 
         # Optional: save results in same format
         results = list(zip(costs, tours, durations))
@@ -123,11 +205,19 @@ def eval_dataset(dataset_path, width, softmax_temp, opts):
 
     costs, tours, durations = zip(*results)  # Not really costs since they should be negative
 
-    print("Average cost: {} +- {}".format(np.mean(costs), 2 * np.std(costs) / np.sqrt(len(costs))))
-    print("Average serial duration: {} +- {}".format(
-        np.mean(durations), 2 * np.std(durations) / np.sqrt(len(durations))))
-    print("Average parallel duration: {}".format(np.mean(durations) / parallelism))
-    print("Calculated total duration: {}".format(timedelta(seconds=int(np.sum(durations) / parallelism))))
+    # Load dataset for metric computation
+    with open(dataset_path, "rb") as f:
+        full_data = pickle.load(f)
+    data = full_data[opts.offset:opts.offset + len(tours)]
+    
+    # Compute BCCSP metrics
+    packets_collected, distances, nodes_visited = compute_bccsp_metrics(data, tours)
+    
+    # Print results
+    print_bccsp_results(packets_collected, distances, nodes_visited, durations,
+                       label=f"Model Results ({opts.decode_strategy})")
+    print(f"Average parallel duration: {np.mean(durations) / parallelism:.4f} s")
+    print(f"Total duration: {timedelta(seconds=int(np.sum(durations) / parallelism))}")
 
     dataset_basename, ext = os.path.splitext(os.path.split(dataset_path)[-1])
     model_name = "_".join(os.path.normpath(os.path.splitext(opts.model)[0]).split(os.sep)[-2:])

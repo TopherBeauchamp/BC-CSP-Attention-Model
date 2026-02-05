@@ -57,7 +57,8 @@ def evaluate_pca_on_dataset(dataset, print_progress=True):
     results = []
     costs = []
     covered_packets_list = []
-    tour_lengths = []
+    tour_lengths = []  # Number of nodes visited
+    tour_distances = []  # Actual distance traveled
     durations = []
     
     iterator = tqdm(dataset, disable=not print_progress) if print_progress else dataset
@@ -94,17 +95,21 @@ def evaluate_pca_on_dataset(dataset, print_progress=True):
         results.append((cost, tour, duration))
         costs.append(cost)
         covered_packets_list.append(covered_packets)
-        tour_lengths.append(len(tour))
+        tour_lengths.append(len(tour))  # Nodes visited
+        tour_distances.append(tour_distance)  # Distance traveled
         durations.append(duration)
     
     # Compute statistics
     stats = {
-        "avg_cost": np.mean(costs),
-        "std_cost": np.std(costs),
-        "stderr_cost": np.std(costs) / np.sqrt(len(costs)),
-        "avg_covered": np.mean(covered_packets_list),
-        "std_covered": np.std(covered_packets_list),
-        "avg_tour_length": np.mean(tour_lengths),
+        "avg_packets": np.mean(covered_packets_list),
+        "std_packets": np.std(covered_packets_list),
+        "stderr_packets": np.std(covered_packets_list) / np.sqrt(len(covered_packets_list)),
+        "avg_distance": np.mean(tour_distances),
+        "std_distance": np.std(tour_distances),
+        "stderr_distance": np.std(tour_distances) / np.sqrt(len(tour_distances)),
+        "avg_nodes": np.mean(tour_lengths),
+        "std_nodes": np.std(tour_lengths),
+        "stderr_nodes": np.std(tour_lengths) / np.sqrt(len(tour_lengths)),
         "avg_duration": np.mean(durations),
         "std_duration": np.std(durations),
         "total_duration": np.sum(durations),
@@ -186,13 +191,14 @@ def main():
     
     # Print statistics
     print("\n" + "=" * 80)
-    print("Results Summary")
+    print("PCA Baseline Results")
     print("=" * 80)
-    print(f"Average cost (negative coverage): {stats['avg_cost']:.4f} ± {2 * stats['stderr_cost']:.4f}")
-    print(f"Average covered packets: {stats['avg_covered']:.2f} ± {2 * stats['std_covered'] / np.sqrt(len(dataset)):.2f}")
-    print(f"Average tour length: {stats['avg_tour_length']:.2f} nodes")
+    print(f"Average packets collected: {stats['avg_packets']:.2f} ± {2 * stats['stderr_packets']:.2f}")
+    print(f"Average distance traveled: {stats['avg_distance']:.2f} ± {2 * stats['stderr_distance']:.2f}")
+    print(f"Average nodes visited: {stats['avg_nodes']:.2f} ± {2 * stats['stderr_nodes']:.2f}")
     print(f"Average serial duration: {stats['avg_duration']:.4f} ± {2 * stats['std_duration'] / np.sqrt(len(dataset)):.4f} s")
     print(f"Total duration: {timedelta(seconds=int(total_time))}")
+    print("=" * 80)
     print()
     
     # Save results
