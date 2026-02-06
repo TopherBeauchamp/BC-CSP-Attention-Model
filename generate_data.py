@@ -41,7 +41,7 @@ def generate_op_data(dataset_size, op_size, prize_type='const'):
     # Max length is approximately half of optimal TSP tour, such that half (a bit more) of the nodes can be visited
     # which is maximally difficult as this has the largest number of possibilities
     MAX_LENGTHS = {
-        20: 2.,
+        20: 1.8,
         50: 3.,
         100: 4.
     }

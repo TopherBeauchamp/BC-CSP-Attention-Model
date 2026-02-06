@@ -58,6 +58,11 @@ def compute_bccsp_metrics(dataset, tours):
             covered |= (dists <= radius)
         
         total_packets = np.sum(packets[covered])
+        # Convert action-space tour → sensor indices
+        # actions: 0=depot, 1..N=sensors
+        tour = np.array(tour, dtype=int)
+        tour = tour[tour > 0] - 1   # remove depot, shift to 0..N-1
+        tour = tour.tolist()
         
         # Compute tour distance
         if len(tour) == 0:
