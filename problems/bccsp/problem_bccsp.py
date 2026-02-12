@@ -148,17 +148,17 @@ class BCCSP(object):
         return beam_search(state, beam_size, propose_expansions)
 
 
-def generate_instance(size, radius=0.15, max_length=1.8, packets_low=1, packets_high=100):
-    """
-    size: number of sensor nodes
-    radius: scalar
-    max_length: budget (total travel length constraint)
-    packets: integer in [packets_low, packets_high]
-    """
+def generate_instance(size, radius=0.15, max_length=None, packets_low=1, packets_high=100):
     loc = torch.rand(size, 2)
-    depot = torch.zeros(2)  # (0,0)
+    depot = torch.zeros(2)
 
-    packets = torch.randint(low=packets_low, high=packets_high + 1, size=(size,), dtype=torch.int64).float()
+    packets = torch.randint(low=packets_low, high=packets_high + 1,
+                            size=(size,), dtype=torch.int64).float()
+
+    # Sample budget if not provided
+    if max_length is None:
+        budgets = torch.tensor([1.80, 2.52, 3.24, 3.96], dtype=torch.float)
+        max_length = budgets[torch.randint(0, len(budgets), (1,)).item()].item()
 
     return {
         "loc": loc,
