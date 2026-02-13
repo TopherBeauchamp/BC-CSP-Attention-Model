@@ -172,7 +172,7 @@ def generate_instance(size, radius=0.15, max_length=None, packets_low=1, packets
 class BCCSPDataset(Dataset):
 
     def __init__(self, filename=None, size=50, num_samples=1000000, offset=0,
-                 radius=0.15, max_length=1.8, distribution=None):
+                 radius=0.15, max_length=None, distribution=None):
         """
         If filename is provided, expects pkl containing tuples:
           (loc, packets, max_length, radius)
@@ -188,9 +188,6 @@ class BCCSPDataset(Dataset):
         """
         super(BCCSPDataset, self).__init__()
 
-        if max_length is None:
-            # You can tune these; OP uses {20:2,50:3,100:4}. 
-            max_length = 1.8
 
         if filename is not None:
             assert os.path.splitext(filename)[1] == ".pkl"
