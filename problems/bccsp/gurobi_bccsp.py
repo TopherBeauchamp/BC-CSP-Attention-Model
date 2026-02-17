@@ -239,7 +239,7 @@ def solve_bccsp_gurobi(
     if timeout is not None:
         m.Params.timeLimit = timeout
     if gap is not None:
-        m.Params.mipGap = gap * 0.01
+        m.Params.mipGap = gap
 
     # Optimize
     m.optimize(subtour_callback)
