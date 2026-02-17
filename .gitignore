@@ -16,6 +16,3 @@ images/
 # model checkpoints
 *.pt
  
-run_gurobi_solver.py
-
-problems/bccsp/gurobi_bccsp.py

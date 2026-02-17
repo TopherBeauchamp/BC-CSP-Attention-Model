@@ -12,15 +12,70 @@ import time
 from datetime import timedelta
 from utils.functions import parse_softmax_temperature
 import pickle
-from LS.LS1 import LS as LS1, dist as ls1_dist
+# Baselines (optional)
+try:
+    from LS.LS1 import LS as LS1, dist as ls1_dist
+except Exception:
+    LS1, ls1_dist = None, None
+
+try:
+    # Preferred (repo layout)
+    from problems.bccsp.pca_baseline import pca_solve
+except Exception:
+    # Fallback (standalone file)
+    try:
+        from pca_baseline import pca_solve  # type: ignore
+    except Exception:
+        pca_solve = None
+
+try:
+    # Preferred (repo layout)
+    from problems.bccsp.gurobi_bccsp import solve_bccsp_gurobi
+except Exception:
+    # Fallback (standalone file)
+    try:
+        from gurobi_bccsp import solve_bccsp_gurobi  # type: ignore
+    except Exception:
+        solve_bccsp_gurobi = None
 
 mp = torch.multiprocessing.get_context('spawn')
+
+def normalize_bccsp_tour_to_sensor_indices(tour, N: int):
+    """Accept either action-space tours (0=depot, 1..N=sensors) or sensor-index tours (0..N-1).
+    Returns a clean list of sensor indices in [0, N-1].
+    """
+    if tour is None:
+        return []
+    t = [int(x) for x in tour if x is not None]
+    t = [x for x in t if x >= 0]
+    if len(t) == 0:
+        return []
+    # Heuristic: if any element equals N or if there are zeros with positives <= N, treat as action space
+    is_action_space = (max(t) <= N) and (0 in t) and any(x > 0 for x in t)
+    if max(t) == N:
+        is_action_space = True
+    if is_action_space:
+        t = [x - 1 for x in t if x > 0]  # drop depot=0, shift
+    # Now t should be sensor indices
+    return [x for x in t if 0 <= x < N]
+
+
+def sensor_indices_to_action_tour(sensor_tour):
+    """Convert sensor indices (0..N-1) to action tour (0=depot, 1..N=sensors) with depot start/end."""
+    st = [int(x) for x in sensor_tour if x is not None]
+    st = [x for x in st if x >= 0]
+    return [0] + [x + 1 for x in st] + [0]
+
 
 
 def compute_bccsp_metrics(dataset, tours):
     """
     Compute BCCSP metrics from dataset and tours.
-    
+
+    tours may be either:
+      - action-space: 0=depot, 1..N=sensors (model output)
+      - sensor-space: 0..N-1 (baseline solvers)
+
     Returns:
         packets_collected: list of packets collected per instance
         distances: list of tour distances per instance
@@ -29,7 +84,7 @@ def compute_bccsp_metrics(dataset, tours):
     packets_collected = []
     distances = []
     nodes_visited = []
-    
+
     for inst, tour in zip(dataset, tours):
         # Parse instance
         if isinstance(inst, tuple):
@@ -45,47 +100,34 @@ def compute_bccsp_metrics(dataset, tours):
             loc = np.asarray(inst)
             packets = np.ones(len(loc)) * 50  # Default if not available
             radius = 0.15
-        
-        # Compute covered packets
+
         N = len(loc)
+        sensor_tour = normalize_bccsp_tour_to_sensor_indices(tour, N)
+
+        # Covered packets
         covered = np.zeros(N, dtype=bool)
-        
-        for visited_idx in tour:
-            if visited_idx < 0 or visited_idx >= N:
-                continue
-            # Mark all sensors within radius as covered
+        for visited_idx in sensor_tour:
             dists = np.linalg.norm(loc - loc[visited_idx], axis=1)
             covered |= (dists <= radius)
-        
-        total_packets = np.sum(packets[covered])
-        # Convert action-space tour → sensor indices
-        # actions: 0=depot, 1..N=sensors
-        tour = np.array(tour, dtype=int)
-        tour = tour[tour > 0] - 1   # remove depot, shift to 0..N-1
-        tour = tour.tolist()
-        
-        # Compute tour distance
-        if len(tour) == 0:
+        total_packets = float(np.sum(packets[covered]))
+
+        # Tour distance (depot at origin)
+        depot = np.zeros(2)
+        if len(sensor_tour) == 0:
             dist = 0.0
         else:
-            depot = np.zeros(2)
             tour_dist = 0.0
             current = depot
-            for idx in tour:
-                if idx >= 0 and idx < N:
-                    tour_dist += np.linalg.norm(loc[idx] - current)
-                    current = loc[idx]
-            # Return to depot
-            tour_dist += np.linalg.norm(current - depot)
-            dist = tour_dist
-        
-        # Number of nodes visited
-        num_nodes = len([n for n in tour if n >= 0])
-        
+            for idx in sensor_tour:
+                tour_dist += np.linalg.norm(loc[idx] - current)
+                current = loc[idx]
+            tour_dist += np.linalg.norm(current - depot)  # return to depot
+            dist = float(tour_dist)
+
         packets_collected.append(total_packets)
         distances.append(dist)
-        nodes_visited.append(num_nodes)
-    
+        nodes_visited.append(len(sensor_tour))
+
     return packets_collected, distances, nodes_visited
 
 
@@ -139,7 +181,7 @@ def eval_dataset_mp(args):
 def eval_dataset(dataset_path, width, softmax_temp, opts):
     # Even with multiprocessing, we load the model here since it contains the name where to write results
     if opts.baseline is not None:
-        assert opts.baseline.lower() == "ls1", "Only baseline supported right now: ls1"
+        assert opts.baseline.lower() in ("ls1", "pca", "gurobi"), "Baseline must be one of: ls1, pca, gurobi"
 
         # Load dataset directly (list of dicts or list of loc arrays)
         with open(dataset_path, "rb") as f:
@@ -148,41 +190,91 @@ def eval_dataset(dataset_path, width, softmax_temp, opts):
         data = data[opts.offset: opts.offset + opts.val_size]
 
         start_all = time.time()
-        costs = []  # Will be negative packets (for compatibility)
-        tours = []
+        costs = []  # cost = negative covered packets (to minimize)
+        tours = []  # store action-space tours for consistency with model output
         durations = []
+
+        baseline = opts.baseline.lower()
 
         for inst in tqdm(data, disable=opts.no_progress_bar):
             t0 = time.time()
 
-            if isinstance(inst, dict):
-                loc = np.asarray(inst["loc"], dtype=np.float32)
+            # Parse instance (tuple or dict)
+            if isinstance(inst, tuple):
+                loc, packets, max_length, radius = inst
+                loc = np.asarray(loc, dtype=np.float64)
+                packets = np.asarray(packets, dtype=np.float64)
+                max_length = float(max_length)
+                radius = float(radius)
+            elif isinstance(inst, dict):
+                loc = np.asarray(inst["loc"], dtype=np.float64)
+                packets = np.asarray(inst["packets"], dtype=np.float64)
+                max_length = float(inst.get("max_length", inst.get("max_len", 0.0)))
+                radius = float(inst.get("radius", opts.radius))
             else:
-                loc = np.asarray(inst, dtype=np.float32)
+                raise ValueError(f"Unsupported instance format for baseline: {type(inst)}")
 
-            tour = LS1(loc, cover_range=7, radius=opts.radius, print_enable=False)
-            cost = ls1_dist(loc, tour)  # This is distance, not packets
+            if baseline == "ls1":
+                if LS1 is None or ls1_dist is None:
+                    raise RuntimeError("LS1 baseline requested but LS1 is not available/importable")
+                sensor_tour = LS1(loc.astype(np.float32), cover_range=7, radius=radius, print_enable=False).tolist()
+                # LS1 cost in old code was distance; we normalize to negative covered packets for apples-to-apples
+                action_tour = sensor_indices_to_action_tour(sensor_tour)
+
+            elif baseline == "pca":
+                if pca_solve is None:
+                    raise RuntimeError("PCA baseline requested but pca_solve is not available/importable")
+                sensor_tour, covered_packets, _tour_distance = pca_solve(
+                    loc, packets, max_length, radius, mu=1.0, print_enable=False
+                )
+                action_tour = sensor_indices_to_action_tour(sensor_tour)
+
+            elif baseline == "gurobi":
+                if solve_bccsp_gurobi is None:
+                    raise RuntimeError("Gurobi baseline requested but solve_bccsp_gurobi is not available/importable")
+                depot = np.zeros(2, dtype=np.float64)
+                obj_val, sensor_tour, _solve_time = solve_bccsp_gurobi(
+                    depot, loc, packets, max_length, radius,
+                    threads=opts.gurobi_threads,
+                    timeout=opts.gurobi_timeout,
+                    gap=opts.gurobi_gap,
+                    verbose=opts.gurobi_verbose
+                )
+                # obj_val is covered packets (maximization)
+                covered_packets = obj_val
+                action_tour = sensor_indices_to_action_tour(sensor_tour)
+
+            else:
+                raise ValueError(f"Unknown baseline: {baseline}")
+
+            # Compute covered packets from the (action-space) tour using shared logic
+            covered_packets_list, _dists, _nodes = compute_bccsp_metrics([inst], [action_tour])
+            covered_packets = covered_packets_list[0]
+            cost = -covered_packets
 
             durations.append(time.time() - t0)
             costs.append(cost)
-            tours.append(tour.tolist())
+            tours.append(action_tour)
 
-        # Compute BCCSP metrics
+        # Compute BCCSP metrics for printing
         packets_collected, distances, nodes_visited = compute_bccsp_metrics(data, tours)
-        
+
         # Print results
-        print_bccsp_results(packets_collected, distances, nodes_visited, durations, 
-                           label="Baseline (LS1) Results")
+        print_bccsp_results(packets_collected, distances, nodes_visited, durations,
+                           label=f"Baseline ({baseline.upper()}) Results")
         print(f"Total duration: {timedelta(seconds=int(time.time() - start_all))}")
 
-        # Optional: save results in same format
+        # Save results in same format
         results = list(zip(costs, tours, durations))
         parallelism = 1
         dataset_basename, ext = os.path.splitext(os.path.split(dataset_path)[-1])
-        results_dir = os.path.join(opts.results_dir, "csp", dataset_basename)
+        results_dir = os.path.join(opts.results_dir, "bccsp", dataset_basename)
         os.makedirs(results_dir, exist_ok=True)
-        out_file = os.path.join(results_dir, f"{dataset_basename}-ls1-radius{opts.radius}-"
-                                f"{opts.offset}-{opts.offset + len(costs)}{ext}")
+        out_file = os.path.join(
+            results_dir,
+            f"{dataset_basename}-{baseline}-"
+            f"{opts.offset}-{opts.offset + len(costs)}{ext}"
+        )
         save_dataset((results, parallelism), out_file)
 
         return costs, tours, durations
@@ -352,9 +444,13 @@ if __name__ == "__main__":
     parser.add_argument('--multiprocessing', action='store_true',
                         help='Use multiprocessing to parallelize over multiple GPUs')
     parser.add_argument('--baseline', type=str, default=None,
-                        help="Run a baseline instead of the model (e.g. ls1)")
+                        help="Run a baseline instead of the model (ls1, pca, gurobi)")
     parser.add_argument('--radius', type=float, default=0.15,
-                        help="Radius for CSP/BCCSP baselines (ls1)")
+                        help="Radius for CSP/BCCSP baselines (used for LS1; PCA/Gurobi read radius from dataset)")
+    parser.add_argument('--gurobi_threads', type=int, default=0, help='Gurobi threads (0=default)')
+    parser.add_argument('--gurobi_timeout', type=float, default=None, help='Gurobi time limit in seconds')
+    parser.add_argument('--gurobi_gap', type=float, default=None, help='Gurobi MIP gap (e.g. 0.01)')
+    parser.add_argument('--gurobi_verbose', action='store_true', help='Enable Gurobi solver output')
 
     opts = parser.parse_args()
 

@@ -1,16 +1,17 @@
 #!/usr/bin/env python
 """
-Standalone script to evaluate PCA baseline on BC-CSP datasets.
+Run Gurobi ILP solver on BC-CSP datasets.
 
 Usage:
-    python run_pca_baseline.py --dataset data/bccsp/bccsp50_validation_seed1234.pkl \
-                                --val_size 100 \
-                                --radius 0.15 \
-                                --output results/pca_results.pkl
+    python run_gurobi_solver.py --dataset data/bccsp/bccsp50_validation_seed1234.pkl \
+                                 --val_size 100 \
+                                 --timeout 3600 \
+                                 --threads 4 \
+                                 --output results/gurobi_results.pkl
 
 This script:
 1. Loads BC-CSP instances from a pickle file
-2. Runs PCA algorithm on each instance
+2. Solves each instance using Gurobi ILP solver
 3. Computes covered packets and tour costs
 4. Saves results in the same format as eval.py
 """
@@ -23,8 +24,8 @@ import os
 from tqdm import tqdm
 from datetime import timedelta
 
-# Import PCA implementation
-from problems.bccsp.pca_baseline import pca_solve, pca_cost
+# Import Gurobi solver
+from  problems.bccsp.gurobi_bccsp import solve_bccsp_gurobi, compute_tour_distance, compute_covered_packets
 
 
 def load_bccsp_dataset(filepath, offset=0, num_samples=None):
@@ -42,13 +43,18 @@ def load_bccsp_dataset(filepath, offset=0, num_samples=None):
     return data[offset:offset + num_samples]
 
 
-def evaluate_pca_on_dataset(dataset, print_progress=True):
+def evaluate_gurobi_on_dataset(dataset, threads=0, timeout=None, gap=None, 
+                                print_progress=True, verbose=False):
     """
-    Run PCA on all instances in the dataset.
+    Run Gurobi solver on all instances in the dataset.
     
     Args:
         dataset: List of BC-CSP instances
+        threads: Number of Gurobi threads
+        timeout: Time limit per instance in seconds
+        gap: MIP gap tolerance (percentage)
         print_progress: Whether to show progress bar
+        verbose: Whether to print Gurobi output
     
     Returns:
         results: List of (cost, tour, duration) tuples
@@ -57,15 +63,14 @@ def evaluate_pca_on_dataset(dataset, print_progress=True):
     results = []
     costs = []
     covered_packets_list = []
-    tour_lengths = []  # Number of nodes visited
-    tour_distances = []  # Actual distance traveled
+    tour_lengths = []
+    tour_distances = []
     durations = []
+    optimal_count = 0
     
     iterator = tqdm(dataset, disable=not print_progress) if print_progress else dataset
     
-    for inst in iterator:
-        t0 = time.time()
-        
+    for inst_idx, inst in enumerate(iterator):
         # Parse instance
         if isinstance(inst, tuple):
             loc, packets, max_length, radius = inst
@@ -79,25 +84,50 @@ def evaluate_pca_on_dataset(dataset, print_progress=True):
         else:
             raise ValueError(f"Unsupported instance format: {type(inst)}")
         
-        # Run PCA
-        tour, covered_packets, tour_distance = pca_solve(
-            loc, packets, max_length, radius,
-            mu=1.0,
-            print_enable=False
-        )
+        depot = np.array([0.0, 0.0])
         
-        # Cost is negative covered packets (we minimize)
-        cost = -covered_packets
+        # Solve with Gurobi
+        try:
+            obj_val, tour, solve_time = solve_bccsp_gurobi(
+                depot, loc, packets, max_length, radius,
+                threads=threads,
+                timeout=timeout,
+                gap=gap,
+                verbose=verbose
+            )
+            
+            # Verify solution
+            covered_packets = compute_covered_packets(tour, loc, packets, radius)
+            tour_distance = compute_tour_distance(tour, loc, depot)
+            
+            # Cost is negative covered packets (we minimize in eval framework)
+            cost = -covered_packets
+            
+            # Store results
+            results.append((cost, tour, solve_time))
+            costs.append(cost)
+            covered_packets_list.append(covered_packets)
+            tour_lengths.append(len(tour))
+            tour_distances.append(tour_distance)
+            durations.append(solve_time)
+            optimal_count += 1
+            
+            if verbose or (inst_idx < 3):  # Print first few
+                print(f"\nInstance {inst_idx}:")
+                print(f"  Covered packets: {covered_packets:.2f}")
+                print(f"  Tour length: {len(tour)} nodes")
+                print(f"  Tour distance: {tour_distance:.4f} / {max_length:.4f}")
+                print(f"  Solve time: {solve_time:.4f} s")
         
-        duration = time.time() - t0
-        
-        # Store results
-        results.append((cost, tour, duration))
-        costs.append(cost)
-        covered_packets_list.append(covered_packets)
-        tour_lengths.append(len(tour))  # Nodes visited
-        tour_distances.append(tour_distance)  # Distance traveled
-        durations.append(duration)
+        except Exception as e:
+            print(f"\nError solving instance {inst_idx}: {e}")
+            # Store empty result
+            results.append((0.0, [], 0.0))
+            costs.append(0.0)
+            covered_packets_list.append(0.0)
+            tour_lengths.append(0)
+            tour_distances.append(0.0)
+            durations.append(0.0)
     
     # Compute statistics
     stats = {
@@ -113,6 +143,7 @@ def evaluate_pca_on_dataset(dataset, print_progress=True):
         "avg_duration": np.mean(durations),
         "std_duration": np.std(durations),
         "total_duration": np.sum(durations),
+        "optimal_count": optimal_count,
     }
     
     return results, stats
@@ -125,14 +156,14 @@ def save_results(results, output_path):
     Format: (results_list, parallelism)
     where results_list is [(cost, tour, duration), ...]
     """
-    parallelism = 1  # PCA is run serially
+    parallelism = 1  # Gurobi runs serially (per instance)
     with open(output_path, "wb") as f:
         pickle.dump((results, parallelism), f)
     print(f"Results saved to {output_path}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run PCA baseline on BC-CSP datasets")
+    parser = argparse.ArgumentParser(description="Run Gurobi ILP solver on BC-CSP datasets")
     
     parser.add_argument("--dataset", type=str, required=True,
                         help="Path to BC-CSP dataset pickle file")
@@ -144,10 +175,16 @@ def main():
                         help="Output path for results (default: auto-generate)")
     parser.add_argument("--results_dir", type=str, default="results",
                         help="Base directory for results")
-    parser.add_argument("--radius", type=float, default=0.15,
-                        help="Coverage radius (for display only; read from dataset)")
+    parser.add_argument("--threads", type=int, default=0,
+                        help="Number of Gurobi threads (0 = auto)")
+    parser.add_argument("--timeout", type=float, default=None,
+                        help="Time limit per instance in seconds (None = no limit)")
+    parser.add_argument("--gap", type=float, default=None,
+                        help="MIP gap tolerance as percentage (None = default)")
     parser.add_argument("--no_progress_bar", action="store_true",
                         help="Disable progress bar")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print Gurobi output")
     parser.add_argument("--seed", type=int, default=None,
                         help="Random seed (for reproducibility)")
     
@@ -157,10 +194,13 @@ def main():
         np.random.seed(args.seed)
     
     print("=" * 80)
-    print("PCA Baseline Evaluation for BC-CSP")
+    print("Gurobi ILP Solver for BC-CSP")
     print("=" * 80)
     print(f"Dataset: {args.dataset}")
     print(f"Instances: {args.val_size} (offset: {args.offset})")
+    print(f"Threads: {args.threads}")
+    print(f"Timeout: {args.timeout} s" if args.timeout else "Timeout: None")
+    print(f"Gap: {args.gap}%" if args.gap else "Gap: Default")
     print()
     
     # Load dataset
@@ -183,20 +223,28 @@ def main():
         print(f"Packet range: [{np.min(packets):.0f}, {np.max(packets):.0f}]")
     print()
     
-    # Run PCA
-    print("Running PCA baseline...")
+    # Run Gurobi solver
+    print("Running Gurobi ILP solver...")
     start_time = time.time()
-    results, stats = evaluate_pca_on_dataset(dataset, print_progress=not args.no_progress_bar)
+    results, stats = evaluate_gurobi_on_dataset(
+        dataset,
+        threads=args.threads,
+        timeout=args.timeout,
+        gap=args.gap,
+        print_progress=not args.no_progress_bar,
+        verbose=args.verbose
+    )
     total_time = time.time() - start_time
     
     # Print statistics
     print("\n" + "=" * 80)
-    print("PCA Baseline Results")
+    print("Gurobi ILP Solver Results")
     print("=" * 80)
+    print(f"Optimal solutions found: {stats['optimal_count']} / {len(dataset)}")
     print(f"Average packets collected: {stats['avg_packets']:.2f} ± {2 * stats['stderr_packets']:.2f}")
-    print(f"Average distance traveled: {stats['avg_distance']:.2f} ± {2 * stats['stderr_distance']:.2f}")
-    print(f"Average nodes visited: {stats['avg_nodes']:.2f} ± {2 * stats['stderr_nodes']:.2f}")
-    print(f"Average serial duration: {stats['avg_duration']:.4f} ± {2 * stats['std_duration'] / np.sqrt(len(dataset)):.4f} s")
+    print(f"Average distance traveled: {stats['avg_distance']:.4f} ± {2 * stats['stderr_distance']:.4f}")
+    print(f"Average nodes visited: {stats['avg_nodes']:.2f} ± {2 * stats['stderr_nodes']:.4f}")
+    print(f"Average solve time: {stats['avg_duration']:.4f} ± {2 * stats['std_duration'] / np.sqrt(len(dataset)):.4f} s")
     print(f"Total duration: {timedelta(seconds=int(total_time))}")
     print("=" * 80)
     print()
@@ -208,9 +256,12 @@ def main():
         results_dir = os.path.join(args.results_dir, "bccsp", dataset_basename)
         os.makedirs(results_dir, exist_ok=True)
         
+        timeout_str = f"timeout{int(args.timeout)}" if args.timeout else "optimal"
+        gap_str = f"gap{args.gap:.1f}" if args.gap else "default"
+        
         output_path = os.path.join(
             results_dir,
-            f"{dataset_basename}-pca-radius{args.radius:.3f}-"
+            f"{dataset_basename}-gurobi-{timeout_str}-{gap_str}-"
             f"{args.offset}-{args.offset + len(results)}.pkl"
         )
     else:
