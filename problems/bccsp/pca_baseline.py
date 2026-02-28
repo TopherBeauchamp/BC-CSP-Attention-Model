@@ -151,41 +151,46 @@ def update_prizes_after_visit(
     N2: List[Set[int]]
 ) -> Tuple[np.ndarray, np.ndarray, Set[int]]:
     """
-    Update prizes after visiting node j (lines 11-31 in Algorithm 2).
-    
+    Update prizes after visiting node j (lines 11-31 in Algorithm 1).
+
     Returns:
         (updated_packets, updated_prizes, nodes_collected_from)
     """
     packets = packets.copy()
     prizes = prizes.copy()
     A_j = set()  # Nodes whose packets are collected when visiting j
-    
+
+    # Save original packet values BEFORE zeroing — needed for step 2.
+    # The paper's "d_l" and "d_k" in lines 23-28 refer to the packet values
+    # at the time of collection, not after zeroing.
+    d_orig = packets.copy()
+
     # Step 1: Collect packets from j and its 1-covered neighbors (lines 12-20)
     if packets[j] != 0:
         packets[j] = 0
         A_j.add(j)
-    
+
     for k in N1[j]:
         if packets[k] != 0:
-            prizes[k] -= packets[k]
+            prizes[k] -= d_orig[k]
             packets[k] = 0
             A_j.add(k)
-    
+
     prizes[j] = 0
-    
-    # Step 2: Update prizes of 1-covered neighbors and their 1-covered neighbors (lines 21-31)
+
+    # Step 2: Update prizes of 1-covered neighbors and their neighbors (lines 21-31)
     for k in N1[j]:
         for l in N1[k]:
             if l in A_j:
-                # Case 1: l's packets were collected in this round (lines 23-24)
-                # l must be in N1[j], update k's prize
-                prizes[k] -= packets[l]  # This will be 0 since we already collected, but keep for clarity
+                # Case 1 (lines 23-24): l's packets were collected this round.
+                # l is in N1[j], so subtract l's original packets from k's prize.
+                prizes[k] -= d_orig[l]
             else:
-                # Case 2: l's packets not collected this round
-                # Check if l is j's 2-covered node and k's packets were collected
+                # Case 2 (lines 26-28): l not collected this round.
+                # If l is j's 2-covered node AND k was collected, update l's prize.
                 if l in N2[j] and k in A_j:
-                    prizes[l] -= packets[k]  # This will be 0, but keep structure
-    
+                    prizes[l] -= d_orig[k]
+
     return packets, prizes, A_j
 
 
