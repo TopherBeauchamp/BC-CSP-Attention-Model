@@ -180,16 +180,34 @@ class StateBCCSP(NamedTuple):
         Feasible actions:
           - not already visited (except depot can be revisited to terminate)
           - must be able to go to that node AND still be within budget to return to depot,
-            implemented the same way as OP (length upon arrival <= max_length[node]) :contentReference[oaicite:8]{index=8}
+            implemented the same way as OP (length upon arrival <= max_length[node])
           - after depot is visited (i.e. returned), nothing else allowed (terminate)
+          - sensor has at least one uncovered node within its radius (non-zero marginal coverage)
         """
         visited_ = self.visited
+        ids = self.ids.squeeze(-1)  # (B,)
 
         # predicted arrival length if go from cur_coord -> each node
         travel = (self.coords[self.ids, :, :] - self.cur_coord[:, :, None, :]).norm(p=2, dim=-1)  # (B,1,N+1)
 
+        # Mask sensors with zero marginal coverage contribution.
+        # A sensor j is useless if every sensor within its radius is already covered.
+        loc = self.loc[ids]        # (B, N, 2)
+        radius = self.radius[ids]  # (B,)
+        distances = (loc[:, :, None, :] - loc[:, None, :, :]).norm(p=2, dim=-1)  # (B, N, N)
+        in_range = distances <= radius[:, None, None]                             # (B, N, N)
+        uncovered = ~self.covered_[:, 0, :]                                       # (B, N)
+        has_uncovered_in_range = (in_range & uncovered[:, None, :]).any(dim=-1)   # (B, N)
+        zero_marginal = ~has_uncovered_in_range                                   # (B, N)
+        # Pad with False for the depot column → (B, 1, N+1)
+        zero_marginal_padded = torch.cat([
+            torch.zeros(ids.size(0), 1, dtype=torch.bool, device=zero_marginal.device),
+            zero_marginal
+        ], dim=-1).unsqueeze(1)
+
         mask = (
             visited_ |
+            zero_marginal_padded |                    # no marginal benefit from visiting
             visited_[:, :, 0:1] |                     # if depot already visited (returned), stop
             (self.lengths[:, :, None] + travel > self.max_length[self.ids, :])  # budget feasibility
         )
