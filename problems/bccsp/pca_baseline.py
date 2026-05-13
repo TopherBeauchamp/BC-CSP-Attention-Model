@@ -371,15 +371,10 @@ def pca_tour_distance(loc: np.ndarray, tour: List[int], depot: np.ndarray = None
     return dist
 
 
-# Compatibility wrapper to match LS1 interface in eval.py
-def PCA(loc: np.ndarray, cover_range: int = 7, radius: float = 0.15, 
+def PCA(loc: np.ndarray, cover_range: int = 7, radius: float = 0.15,
         max_length: float = None, packets: np.ndarray = None,
         print_enable: bool = False) -> List[int]:
-    """
-    Wrapper function matching LS1 interface for eval.py compatibility.
-    
-    Note: cover_range is ignored (kept for compatibility).
-    """
+    """cover_range is ignored, kept for API compatibility."""
     if packets is None:
         # Generate random packets if not provided (for testing)
         packets = np.random.randint(1, 101, size=len(loc))

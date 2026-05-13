@@ -10,3 +10,4 @@ dependencies:
 - torchvision
 - pip:
   - tensorboard_logger
+  - gurobipy

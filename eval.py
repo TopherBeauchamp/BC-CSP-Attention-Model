@@ -13,12 +13,6 @@ from datetime import timedelta, datetime
 import json
 from utils.functions import parse_softmax_temperature
 import pickle
-# Baselines (optional)
-try:
-    from LS.LS1 import LS as LS1, dist as ls1_dist
-except Exception:
-    LS1, ls1_dist = None, None
-
 try:
     # Preferred (repo layout)
     from problems.bccsp.pca_baseline import pca_solve
@@ -242,14 +236,7 @@ def eval_dataset(dataset_path, width, softmax_temp, opts):
             else:
                 raise ValueError(f"Unsupported instance format for baseline: {type(inst)}")
 
-            if baseline == "ls1":
-                if LS1 is None or ls1_dist is None:
-                    raise RuntimeError("LS1 baseline requested but LS1 is not available/importable")
-                sensor_tour = LS1(loc.astype(np.float32), cover_range=7, radius=radius, print_enable=False).tolist()
-                # LS1 cost in old code was distance; we normalize to negative covered packets for apples-to-apples
-                action_tour = sensor_indices_to_action_tour(sensor_tour)
-
-            elif baseline == "pca":
+            if baseline == "pca":
                 if pca_solve is None:
                     raise RuntimeError("PCA baseline requested but pca_solve is not available/importable")
                 sensor_tour, covered_packets, _tour_distance = pca_solve(
@@ -492,9 +479,9 @@ if __name__ == "__main__":
     parser.add_argument('--multiprocessing', action='store_true',
                         help='Use multiprocessing to parallelize over multiple GPUs')
     parser.add_argument('--baseline', type=str, default=None,
-                        help="Run a baseline instead of the model (ls1, pca, gurobi)")
+                        help="Run a baseline instead of the model (pca, gurobi)")
     parser.add_argument('--radius', type=float, default=0.15,
-                        help="Radius for CSP/BCCSP baselines (used for LS1; PCA/Gurobi read radius from dataset)")
+                        help="Radius for BCCSP baselines (PCA/Gurobi read radius from dataset)")
     parser.add_argument('--gurobi_threads', type=int, default=0, help='Gurobi threads (0=default)')
     parser.add_argument('--gurobi_timeout', type=float, default=None, help='Gurobi time limit in seconds')
     parser.add_argument('--gurobi_gap', type=float, default=None, help='Gurobi MIP gap (e.g. 0.01)')
