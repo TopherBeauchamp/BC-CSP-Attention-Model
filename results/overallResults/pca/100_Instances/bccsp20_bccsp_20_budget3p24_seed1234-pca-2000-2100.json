@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-05-13T00:22:32",
+  "num_instances": 100,
+  "avg_packets_collected": 824.69,
+  "stderr_packets_collected": 25.7941,
+  "avg_distance_traveled": 3.0882,
+  "stderr_distance_traveled": 0.0277,
+  "avg_nodes_visited": 7.66,
+  "stderr_nodes_visited": 0.2657,
+  "avg_serial_duration_s": 0.0055,
+  "stderr_serial_duration_s": 0.0008,
+  "baseline": "pca",
+  "dataset": "bccsp20_bccsp_20_budget3p24_seed1234",
+  "offset": 2000,
+  "val_size": 100
+}

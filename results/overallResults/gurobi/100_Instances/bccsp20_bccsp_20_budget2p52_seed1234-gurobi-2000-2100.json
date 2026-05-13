@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-05-13T00:26:17",
+  "num_instances": 100,
+  "avg_packets_collected": 698.14,
+  "stderr_packets_collected": 26.018,
+  "avg_distance_traveled": 2.4756,
+  "stderr_distance_traveled": 0.0096,
+  "avg_nodes_visited": 7.45,
+  "stderr_nodes_visited": 0.2834,
+  "avg_serial_duration_s": 1.7706,
+  "stderr_serial_duration_s": 0.0975,
+  "baseline": "gurobi",
+  "dataset": "bccsp20_bccsp_20_budget2p52_seed1234",
+  "offset": 2000,
+  "val_size": 100
+}
