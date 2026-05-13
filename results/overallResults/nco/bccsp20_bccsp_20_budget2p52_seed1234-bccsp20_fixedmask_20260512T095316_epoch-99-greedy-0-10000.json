@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-05-12T17:16:03",
+  "num_instances": 10000,
+  "avg_packets_collected": 690.5851,
+  "stderr_packets_collected": 2.692,
+  "avg_distance_traveled": 2.4165,
+  "stderr_distance_traveled": 0.0021,
+  "avg_nodes_visited": 7.0557,
+  "stderr_nodes_visited": 0.0234,
+  "avg_serial_duration_s": 1.1247,
+  "stderr_serial_duration_s": 0.0018,
+  "model": "bccsp20_fixedmask_20260512T095316_epoch-99",
+  "decode_strategy": "greedy",
+  "dataset": "bccsp20_bccsp_20_budget2p52_seed1234",
+  "offset": 0,
+  "val_size": 10000
+}
