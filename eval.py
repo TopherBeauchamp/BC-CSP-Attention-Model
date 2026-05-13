@@ -433,10 +433,6 @@ def _eval_dataset(model, dataset, width, softmax_temp, opts, device):
         for seq, cost in zip(sequences, costs):
             if model.problem.NAME == "tsp":
                 seq = seq.tolist()  # fixed length
-            elif model.problem.NAME in ("cvrp", "sdvrp"):
-                seq = np.trim_zeros(seq).tolist() + [0]  # add depot
-            elif model.problem.NAME in ("op", "pctsp"):
-                seq = np.trim_zeros(seq).tolist()  # exclude depot
             elif model.problem.NAME in ("csp", "bccsp"):
                 # CSP/BCCSP sequences are padded with -1 for unused steps
                 seq = seq[seq > -1].tolist()

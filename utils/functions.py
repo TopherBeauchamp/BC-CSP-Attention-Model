@@ -11,16 +11,11 @@ import torch.nn.functional as F
 
 
 def load_problem(name):
-    from problems import TSP, CVRP, SDVRP, OP, PCTSPDet, PCTSPStoch, CSP, BCCSP
+    from problems import TSP, CSP, BCCSP
     problem = {
-        'bccsp': BCCSP, 
+        'bccsp': BCCSP,
         'csp': CSP,
         'tsp': TSP,
-        'cvrp': CVRP,
-        'sdvrp': SDVRP,
-        'op': OP,
-        'pctsp_det': PCTSPDet,
-        'pctsp_stoch': PCTSPStoch,
     }.get(name, None)
     assert problem is not None, "Currently unsupported problem: {}!".format(name)
     return problem
@@ -68,13 +63,8 @@ def load_args(filename):
     with open(filename, 'r') as f:
         args = json.load(f)
 
-    # Backwards compatibility
     if 'data_distribution' not in args:
         args['data_distribution'] = None
-        probl, *dist = args['problem'].split("_")
-        if probl == "op":
-            args['problem'] = probl
-            args['data_distribution'] = dist[0]
     return args
 
 

@@ -121,11 +121,7 @@ class AttentionModel(nn.Module):
         self.n_encode_layers = n_encode_layers
         self.decode_type = None              # Set to "greedy" or "sampling" before forward
         self.temp = 1.0                      # τ in Eq. (15): temperature for softmax
-        self.allow_partial = problem.NAME == 'sdvrp'
         self.is_bccsp = problem.NAME == 'bccsp'
-        self.is_vrp = problem.NAME == 'cvrp' or problem.NAME == 'sdvrp'
-        self.is_orienteering = problem.NAME == 'op'
-        self.is_pctsp = problem.NAME == 'pctsp'
         self.is_csp = problem.NAME == 'csp'
         self.tanh_clipping = tanh_clipping   # C = 10 [Eq. (14)]
 
@@ -141,19 +137,12 @@ class AttentionModel(nn.Module):
         # ====================================================================
         # PROBLEM-SPECIFIC EMBEDDING LAYERS — Eq. (1)-(2)
         # ====================================================================
-        if self.is_vrp or self.is_orienteering or self.is_pctsp or self.is_bccsp:
+        if self.is_bccsp:
             step_context_dim = embedding_dim + 1
-
-            if self.is_pctsp:
-                node_dim = 4  # x, y, expected_prize, penalty
-            else:
-                node_dim = 3  # x, y, packets (for BC-CSP) or demand/prize (for others)
+            node_dim = 3  # x, y, packets
 
             # Eq. (1): W_depot · [x_0, y_0] + b_depot  →  d-dim depot embedding
             self.init_embed_depot = nn.Linear(2, embedding_dim)
-
-            if self.is_vrp and self.allow_partial:
-                self.project_node_step = nn.Linear(1, 3 * embedding_dim, bias=False)
         elif self.is_csp:
             node_dim = 2
             self.first_placeholder = nn.Parameter(torch.Tensor(embedding_dim))
@@ -646,24 +635,13 @@ class AttentionModel(nn.Module):
         """
         Retrieve the precomputed glimpse K, V and logit K.
 
-        For most problems (including BC-CSP), these are simply the static
-        projections from _precompute(). The SDVRP case adds step-dependent
-        demand information.
+        Returns the static precomputed projections from _precompute().
 
         Returns:
             glimpse_K: (M, B, 1, N+1, d_k)
             glimpse_V: (M, B, 1, N+1, d_k)
             logit_K:   (B, 1, N+1, d)
         """
-        if self.is_vrp and self.allow_partial:
-            glimpse_key_step, glimpse_val_step, logit_key_step = \
-                self.project_node_step(state.demands_with_depot[:, :, :, None].clone()).chunk(3, dim=-1)
-            return (
-                fixed.glimpse_key + self._make_heads(glimpse_key_step),
-                fixed.glimpse_val + self._make_heads(glimpse_val_step),
-                fixed.logit_key + logit_key_step,
-            )
-        # For BC-CSP / TSP / OP / etc.: return static precomputed projections
         return fixed.glimpse_key, fixed.glimpse_val, fixed.logit_key
 
     def _make_heads(self, v, num_steps=None):
