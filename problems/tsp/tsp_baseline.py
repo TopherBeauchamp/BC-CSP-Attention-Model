@@ -7,7 +7,6 @@ from scipy.spatial import distance_matrix
 from utils import run_all_in_pool
 from utils.data_utils import check_extension, load_dataset, save_dataset
 from subprocess import check_call, check_output, CalledProcessError
-from problems.vrp.vrp_baseline import get_lkh_executable
 import torch
 from tqdm import tqdm
 import re
@@ -81,54 +80,6 @@ def solve_concorde_log(executable, directory, name, loc, disable_cache=False):
         print(e)
         return None
 
-
-def solve_lkh_log(executable, directory, name, loc, runs=1, disable_cache=False):
-
-    problem_filename = os.path.join(directory, "{}.lkh{}.vrp".format(name, runs))
-    tour_filename = os.path.join(directory, "{}.lkh{}.tour".format(name, runs))
-    output_filename = os.path.join(directory, "{}.lkh{}.pkl".format(name, runs))
-    param_filename = os.path.join(directory, "{}.lkh{}.par".format(name, runs))
-    log_filename = os.path.join(directory, "{}.lkh{}.log".format(name, runs))
-
-    try:
-        # May have already been run
-        if os.path.isfile(output_filename) and not disable_cache:
-            tour, duration = load_dataset(output_filename)
-        else:
-            write_tsplib(problem_filename, loc, name=name)
-
-            params = {"PROBLEM_FILE": problem_filename, "OUTPUT_TOUR_FILE": tour_filename, "RUNS": runs, "SEED": 1234}
-            write_lkh_par(param_filename, params)
-
-            with open(log_filename, 'w') as f:
-                start = time.time()
-                check_call([executable, param_filename], stdout=f, stderr=f)
-                duration = time.time() - start
-
-            tour = read_tsplib(tour_filename)
-            save_dataset((tour, duration), output_filename)
-
-        return calc_tsp_length(loc, tour), tour, duration
-
-    except Exception as e:
-        print("Exception occured")
-        print(e)
-        return None
-
-
-def write_lkh_par(filename, parameters):
-    default_parameters = {  # Use none to include as flag instead of kv
-        "MAX_TRIALS": 10000,
-        "RUNS": 10,
-        "TRACE_LEVEL": 1,
-        "SEED": 0
-    }
-    with open(filename, 'w') as f:
-        for k, v in {**default_parameters, **parameters}.items():
-            if v is None:
-                f.write("{}\n".format(k))
-            else:
-                f.write("{} = {}\n".format(k, v))
 
 
 def write_tsplib(filename, loc, name="problem"):
@@ -388,7 +339,7 @@ if __name__ == "__main__":
                 dataset_path, eval_batch_size, opts.no_cuda, opts.n,
                 opts.progress_bar_mininterval
             )
-        elif method in ("gurobi", "gurobigap", "gurobit", "concorde", "lkh") or method[-9:] == 'insertion':
+        elif method in ("gurobi", "gurobigap", "gurobit", "concorde") or method[-9:] == 'insertion':
 
             target_dir = os.path.join(results_dir, "{}-{}".format(
                 dataset_basename,
@@ -409,13 +360,6 @@ if __name__ == "__main__":
 
                 def run_func(args):
                     return solve_concorde_log(executable, *args, disable_cache=opts.disable_cache)
-
-            elif method == "lkh":
-                use_multiprocessing = False
-                executable = get_lkh_executable()
-
-                def run_func(args):
-                    return solve_lkh_log(executable, *args, runs=runs, disable_cache=opts.disable_cache)
 
             elif method[:6] == "gurobi":
                 use_multiprocessing = True  # We run one thread per instance

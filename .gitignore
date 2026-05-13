@@ -1,4 +1,5 @@
 data/
+.claude/
 
 logs/
 results/

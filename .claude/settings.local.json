@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\cbeau\\\\Desktop\\\\CSP_Attention\" -Recurse -Directory)",
-      "Bash(Select-Object -ExpandProperty FullName)"
-    ]
-  }
-}

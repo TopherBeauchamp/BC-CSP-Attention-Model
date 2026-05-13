@@ -139,8 +139,9 @@ def print_bccsp_results(packets_collected, distances, nodes_visited, durations, 
 
 
 def save_overall_results_json(packets_collected, distances, nodes_visited, durations,
-                              results_dir, subfolder, filename_stem, extra_fields=None):
-    """Save a JSON summary of overall results to results/overallResults/{subfolder}/."""
+                              results_dir, subfolder, filename_stem, val_size,
+                              total_duration_s=None, extra_fields=None):
+    """Save a JSON summary of overall results to results/overallResults/{subfolder}/{val_size}_Instances/."""
     n = len(packets_collected)
     summary = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -153,11 +154,12 @@ def save_overall_results_json(packets_collected, distances, nodes_visited, durat
         "stderr_nodes_visited": round(float(2 * np.std(nodes_visited) / np.sqrt(n)), 4),
         "avg_serial_duration_s": round(float(np.mean(durations)), 4),
         "stderr_serial_duration_s": round(float(2 * np.std(durations) / np.sqrt(n)), 4),
+        "total_duration_s": round(float(total_duration_s), 4) if total_duration_s is not None else None,
     }
     if extra_fields:
         summary.update(extra_fields)
 
-    out_dir = os.path.join(results_dir, "overallResults", subfolder)
+    out_dir = os.path.join(results_dir, "overallResults", subfolder, f"{val_size}_Instances")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"{filename_stem}.json")
     with open(out_path, "w") as f:
@@ -277,7 +279,8 @@ def eval_dataset(dataset_path, width, softmax_temp, opts):
         # Print results
         print_bccsp_results(packets_collected, distances, nodes_visited, durations,
                            label=f"Baseline ({baseline.upper()}) Results")
-        print(f"Total duration: {timedelta(seconds=int(time.time() - start_all))}")
+        total_duration = time.time() - start_all
+        print(f"Total duration: {timedelta(seconds=int(total_duration))}")
 
         # Save overall JSON summary
         dataset_basename, ext = os.path.splitext(os.path.split(dataset_path)[-1])
@@ -286,6 +289,8 @@ def eval_dataset(dataset_path, width, softmax_temp, opts):
             results_dir=opts.results_dir,
             subfolder=baseline,
             filename_stem=f"{dataset_basename}-{baseline}-{opts.offset}-{opts.offset + len(costs)}",
+            val_size=len(costs),
+            total_duration_s=total_duration,
             extra_fields={"baseline": baseline, "dataset": dataset_basename,
                           "offset": opts.offset, "val_size": len(costs)},
         )
@@ -350,6 +355,8 @@ def eval_dataset(dataset_path, width, softmax_temp, opts):
         results_dir=opts.results_dir,
         subfolder="nco",
         filename_stem=f"{dataset_basename}-{model_name}-{opts.decode_strategy}-{opts.offset}-{opts.offset + len(costs)}",
+        val_size=len(costs),
+        total_duration_s=float(np.sum(durations) / parallelism),
         extra_fields={"model": model_name, "decode_strategy": opts.decode_strategy,
                       "dataset": dataset_basename, "offset": opts.offset, "val_size": len(costs)},
     )
