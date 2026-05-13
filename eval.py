@@ -9,7 +9,8 @@ from utils import load_model, move_to
 from utils.data_utils import save_dataset
 from torch.utils.data import DataLoader
 import time
-from datetime import timedelta
+from datetime import timedelta, datetime
+import json
 from utils.functions import parse_softmax_temperature
 import pickle
 # Baselines (optional)
@@ -143,6 +144,33 @@ def print_bccsp_results(packets_collected, distances, nodes_visited, durations, 
     print("=" * 80 + "\n")
 
 
+def save_overall_results_json(packets_collected, distances, nodes_visited, durations,
+                              results_dir, subfolder, filename_stem, extra_fields=None):
+    """Save a JSON summary of overall results to results/overallResults/{subfolder}/."""
+    n = len(packets_collected)
+    summary = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "num_instances": n,
+        "avg_packets_collected": round(float(np.mean(packets_collected)), 4),
+        "stderr_packets_collected": round(float(2 * np.std(packets_collected) / np.sqrt(n)), 4),
+        "avg_distance_traveled": round(float(np.mean(distances)), 4),
+        "stderr_distance_traveled": round(float(2 * np.std(distances) / np.sqrt(n)), 4),
+        "avg_nodes_visited": round(float(np.mean(nodes_visited)), 4),
+        "stderr_nodes_visited": round(float(2 * np.std(nodes_visited) / np.sqrt(n)), 4),
+        "avg_serial_duration_s": round(float(np.mean(durations)), 4),
+        "stderr_serial_duration_s": round(float(2 * np.std(durations) / np.sqrt(n)), 4),
+    }
+    if extra_fields:
+        summary.update(extra_fields)
+
+    out_dir = os.path.join(results_dir, "overallResults", subfolder)
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"{filename_stem}.json")
+    with open(out_path, "w") as f:
+        json.dump(summary, f, indent=2)
+    print(f"Overall results saved to {out_path}")
+
+
 def get_best(sequences, cost, ids=None, batch_size=None):
     """
     Ids contains [0, 0, 0, 1, 1, 2, ..., n, n, n] if 3 solutions found for 0th instance, 2 for 1st, etc
@@ -264,10 +292,20 @@ def eval_dataset(dataset_path, width, softmax_temp, opts):
                            label=f"Baseline ({baseline.upper()}) Results")
         print(f"Total duration: {timedelta(seconds=int(time.time() - start_all))}")
 
+        # Save overall JSON summary
+        dataset_basename, ext = os.path.splitext(os.path.split(dataset_path)[-1])
+        save_overall_results_json(
+            packets_collected, distances, nodes_visited, durations,
+            results_dir=opts.results_dir,
+            subfolder=baseline,
+            filename_stem=f"{dataset_basename}-{baseline}-{opts.offset}-{opts.offset + len(costs)}",
+            extra_fields={"baseline": baseline, "dataset": dataset_basename,
+                          "offset": opts.offset, "val_size": len(costs)},
+        )
+
         # Save results in same format
         results = list(zip(costs, tours, durations))
         parallelism = 1
-        dataset_basename, ext = os.path.splitext(os.path.split(dataset_path)[-1])
         results_dir = os.path.join(opts.results_dir, "bccsp", dataset_basename)
         os.makedirs(results_dir, exist_ok=True)
         out_file = os.path.join(
@@ -318,6 +356,16 @@ def eval_dataset(dataset_path, width, softmax_temp, opts):
 
     dataset_basename, ext = os.path.splitext(os.path.split(dataset_path)[-1])
     model_name = "_".join(os.path.normpath(os.path.splitext(opts.model)[0]).split(os.sep)[-2:])
+
+    # Save overall JSON summary
+    save_overall_results_json(
+        packets_collected, distances, nodes_visited, durations,
+        results_dir=opts.results_dir,
+        subfolder="nco",
+        filename_stem=f"{dataset_basename}-{model_name}-{opts.decode_strategy}-{opts.offset}-{opts.offset + len(costs)}",
+        extra_fields={"model": model_name, "decode_strategy": opts.decode_strategy,
+                      "dataset": dataset_basename, "offset": opts.offset, "val_size": len(costs)},
+    )
     if opts.o is None:
         results_dir = os.path.join(opts.results_dir, model.problem.NAME, dataset_basename)
         os.makedirs(results_dir, exist_ok=True)
