@@ -13,7 +13,7 @@ __pycache__/
 
 # training outputs
 outputs/
-images/
+images_&_docs/
 # model checkpoints
 *.pt
  
