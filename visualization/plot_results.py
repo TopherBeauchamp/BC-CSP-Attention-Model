@@ -36,12 +36,12 @@ matplotlib.rcParams.update({
     'figure.dpi': 300,
 })
 
-# Normalized budget distance → battery label (Wh)
+# Normalized budget distance → battery label (Wh)s
 # Derived from the physical drone model: 36 m/Wh, 1 unit = 1000 m
 BUDGET_TO_WH = {1.8: 50, 2.52: 70, 3.24: 90, 3.96: 110}
 
 ALGO_ORDER  = ['pca', 'nco', 'gurobi']
-ALGO_LABELS = {'pca': 'Greedy', 'nco': 'NCO', 'gurobi': 'Gurobi (30s, 5% MILP Gap)'}
+ALGO_LABELS = {'pca': 'Greedy', 'nco': 'NCO', 'gurobi': 'Gurobi (30s, 5%)'}
 ALGO_COLORS = {'pca': '#1f77b4', 'nco': '#2ca02c', 'gurobi': '#d62728'}
 
 
