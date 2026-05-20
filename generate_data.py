@@ -43,25 +43,31 @@ def generate_bccsp_data(dataset_size, graph_size, radius=0.15, max_length=None,
         packets_low: Minimum packet count per sensor (default 1)
         packets_high: Maximum packet count per sensor (default 100)
     """
-    # Default max_length based on graph_size (matching problem_bccsp.py defaults)
+    # Default max_length: sample per-instance from budget levels matching problem_bccsp.py
+    # 20-node 1000m grid:   [1800, 2520, 3240, 3960]m  / 1000  = [1.80, 2.52, 3.24, 3.96]
+    # 100-node 10000m grid: [18000, 36000, 54000, 72000]m / 10000 = [1.80, 3.60, 5.40, 7.20]
+    BUDGETS = {
+        20:  [1.80, 2.52, 3.24, 3.96],
+        100: [1.80, 3.60, 5.40, 7.20],
+    }
+    budget_list = None
     if max_length is None:
-        MAX_LENGTHS = {20: 2.0, 50: 3.0, 100: 4.0}
-        max_length = MAX_LENGTHS.get(graph_size, 3.0)
-    
+        budget_list = BUDGETS.get(graph_size, [1.80, 2.52, 3.24, 3.96])
+
     # Generate sensor locations (uniform [0,1]^2)
     loc = np.random.uniform(size=(dataset_size, graph_size, 2))
-    
+
     # Generate packet counts (integer in [packets_low, packets_high])
-    packets = np.random.randint(low=packets_low, high=packets_high + 1, 
+    packets = np.random.randint(low=packets_low, high=packets_high + 1,
                                 size=(dataset_size, graph_size))
-    
+
     # Return as list of tuples matching BCCSPDataset pickle format
     # (loc, packets, max_length, radius)
     return [
         (
             loc[i].tolist(),
             packets[i].tolist(),
-            float(max_length),
+            float(np.random.choice(budget_list) if budget_list is not None else max_length),
             float(radius)
         )
         for i in range(dataset_size)

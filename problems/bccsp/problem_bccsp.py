@@ -155,9 +155,15 @@ def generate_instance(size, radius=0.15, max_length=None, packets_low=1, packets
     packets = torch.randint(low=packets_low, high=packets_high + 1,
                             size=(size,), dtype=torch.int64).float()
 
-    # Sample budget if not provided
+    # Sample budget if not provided; levels correspond to physical meters / grid_size
+    # 20-node 1000m grid:  [1800, 2520, 3240, 3960]m  / 1000  = [1.80, 2.52, 3.24, 3.96]
+    # 100-node 10000m grid: [18000, 36000, 54000, 72000]m / 10000 = [1.80, 3.60, 5.40, 7.20]
     if max_length is None:
-        budgets = torch.tensor([1.80, 2.52, 3.24, 3.96], dtype=torch.float)
+        BUDGETS = {
+            20:  [1.80, 2.52, 3.24, 3.96],
+            100: [1.80, 3.60, 5.40, 7.20],
+        }
+        budgets = torch.tensor(BUDGETS.get(size, [1.80, 2.52, 3.24, 3.96]), dtype=torch.float)
         max_length = budgets[torch.randint(0, len(budgets), (1,)).item()].item()
 
     return {

@@ -59,6 +59,8 @@ def get_options(args=None):
                              ' to save memory (default None means no shrinking)')
     parser.add_argument('--data_distribution', type=str, default="const",
                         help='Data distribution to use during training, defaults and options depend on problem.')
+    parser.add_argument('--radius', type=float, default=0.15,
+                        help='Coverage radius for BCCSP on-the-fly training data (default 0.15 = 150m on 1000m grid; use 0.03 for 300m on 10000m grid)')
 
     # Misc
     parser.add_argument('--log_step', type=int, default=50, help='Log info every log_step steps')

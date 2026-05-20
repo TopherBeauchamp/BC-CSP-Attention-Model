@@ -104,7 +104,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     if opts.test_instance is None:
         dataset = problem.make_dataset(
-            size=opts.graph_size, num_samples=opts.epoch_size, distribution=opts.data_distribution)
+            size=opts.graph_size, num_samples=opts.epoch_size, distribution=opts.data_distribution,
+            radius=getattr(opts, 'radius', 0.15))
     else:
         from test_plot.test_dataset import Test_CSPDataset
         dataset = Test_CSPDataset(size=opts.graph_size, num_samples=opts.epoch_size,
