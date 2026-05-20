@@ -1,7 +1,12 @@
 #!/usr/bin/env python
 # Fix OpenMP conflict between PyTorch and Gurobi (must be before any imports)
 import os
+import sys
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+# Add repo root to sys.path so imports like `problems.bccsp.*` and `utils` resolve
+# regardless of which directory this script is invoked from.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 """
 Generate RSN visual comparison figure for Greedy (PCA), NCO (Attention), and Optimal (Gurobi)
@@ -40,7 +45,6 @@ import matplotlib.pyplot as plt
 import matplotlib
 import argparse
 import pickle
-import sys
 import time
 
 matplotlib.rcParams.update({
