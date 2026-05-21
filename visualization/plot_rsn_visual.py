@@ -6,7 +6,10 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # Add repo root to sys.path so imports like `problems.bccsp.*` and `utils` resolve
 # regardless of which directory this script is invoked from.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO_ROOT)
+
+_DEFAULT_OUT_DIR = os.path.join(_REPO_ROOT, "images_&_docs", "Results_CSCSU")
 
 """
 Generate RSN visual comparison figure for Greedy (PCA), NCO (Attention), and Optimal (Gurobi)
@@ -182,22 +185,41 @@ def plot_rsn_comparison(
     area_size=1000,
     scale_factor=1.0,
     caption=None,
+    panel_size=None,
+    show_labels=None,
 ):
     """
     Plot side-by-side RSN tour visualizations.
 
     loc/radius/distances are in original [0,1] space.
     scale_factor converts to physical units for display.
+    panel_size: width in inches per algorithm panel (auto if None).
+    show_labels: draw node-id/packet labels (auto-disabled for N>30 if None).
     """
     n_algos = len(algo_results)
+    N = len(loc)
     depot = np.array([0.0, 0.0])
+
+    # Auto-scale panel dimensions and label visibility based on N
+    if panel_size is None:
+        panel_size = 5.5 if N <= 30 else 14.0
+    if show_labels is None:
+        show_labels = N <= 30
+
+    panel_height = panel_size * 1.15
+
+    # Marker sizes scale with N
+    node_ms    = 5 if N <= 30 else 3
+    visited_ms = 6 if N <= 30 else 4
+    depot_ms   = 7 if N <= 30 else 5
+    circle_lw  = 1.0 if N <= 30 else 0.6
 
     # Scale for display
     disp_loc = loc * scale_factor
     disp_radius = radius * scale_factor
     disp_depot = depot * scale_factor
 
-    fig, axes = plt.subplots(1, n_algos, figsize=(4.2 * n_algos, 4.8))
+    fig, axes = plt.subplots(1, n_algos, figsize=(panel_size * n_algos, panel_height))
     if n_algos == 1:
         axes = [axes]
 
@@ -212,15 +234,15 @@ def plot_rsn_comparison(
             circle = plt.Circle(
                 (disp_loc[idx, 0], disp_loc[idx, 1]), disp_radius,
                 facecolor='none', edgecolor='#DAA520',
-                linewidth=1.0, linestyle='--', alpha=0.6, zorder=1,
+                linewidth=circle_lw, linestyle='--', alpha=0.6, zorder=1,
             )
             ax.add_patch(circle)
 
         # --- All sensor nodes as black dots ---
-        ax.plot(disp_loc[:, 0], disp_loc[:, 1], 'ko', markersize=5, zorder=5)
+        ax.plot(disp_loc[:, 0], disp_loc[:, 1], 'ko', markersize=node_ms, zorder=5)
 
         # --- Depot as diamond ---
-        ax.plot(disp_depot[0], disp_depot[1], 'kD', markersize=7, zorder=6)
+        ax.plot(disp_depot[0], disp_depot[1], 'kD', markersize=depot_ms, zorder=6)
 
         # --- Tour as green lines ---
         if len(tour) > 0:
@@ -235,56 +257,57 @@ def plot_rsn_comparison(
             ax.plot(path_x, path_y, 'g-', linewidth=1.8, zorder=3, alpha=0.85)
 
             for idx in tour:
-                ax.plot(disp_loc[idx, 0], disp_loc[idx, 1], 'go', markersize=6,
+                ax.plot(disp_loc[idx, 0], disp_loc[idx, 1], 'go', markersize=visited_ms,
                         zorder=5, markeredgecolor='black', markeredgewidth=0.5)
 
         # --- Labels: index + (packets) directly above each node ---
-        label_gap = area_size * 0.02
-        label_nudge_x = area_size * 0.015
-        id_to_pkt_gap = area_size * 0.025  # extra space between node id and packet count
+        if show_labels:
+            label_gap = area_size * 0.02
+            label_nudge_x = area_size * 0.015
+            id_to_pkt_gap = area_size * 0.025  # extra space between node id and packet count
 
-        # Pre-compute label positions, then nudge overlapping ones
-        label_positions = []
-        for i in range(len(loc)):
-            lx = disp_loc[i, 0] + label_nudge_x
-            ly = disp_loc[i, 1] + label_gap
-            label_positions.append([lx, ly])
+            # Pre-compute label positions, then nudge overlapping ones
+            label_positions = []
+            for i in range(len(loc)):
+                lx = disp_loc[i, 0] + label_nudge_x
+                ly = disp_loc[i, 1] + label_gap
+                label_positions.append([lx, ly])
 
-        # Simple overlap nudge: if two labels are very close, shift one further right
-        min_dist = area_size * 0.045
-        for i in range(len(label_positions)):
-            for j in range(i + 1, len(label_positions)):
-                dx = label_positions[j][0] - label_positions[i][0]
-                dy = label_positions[j][1] - label_positions[i][1]
-                d = np.sqrt(dx**2 + dy**2)
-                if d < min_dist and d > 0:
-                    # Push the rightmost one further right, or the higher one up
-                    if abs(dx) < min_dist * 0.8:
-                        shift = (min_dist - abs(dx)) * 0.6
-                        if label_positions[j][0] >= label_positions[i][0]:
-                            label_positions[j][0] += shift
-                        else:
-                            label_positions[i][0] += shift
+            # Simple overlap nudge: if two labels are very close, shift one further right
+            min_dist = area_size * 0.045
+            for i in range(len(label_positions)):
+                for j in range(i + 1, len(label_positions)):
+                    dx = label_positions[j][0] - label_positions[i][0]
+                    dy = label_positions[j][1] - label_positions[i][1]
+                    d = np.sqrt(dx**2 + dy**2)
+                    if d < min_dist and d > 0:
+                        # Push the rightmost one further right, or the higher one up
+                        if abs(dx) < min_dist * 0.8:
+                            shift = (min_dist - abs(dx)) * 0.6
+                            if label_positions[j][0] >= label_positions[i][0]:
+                                label_positions[j][0] += shift
+                            else:
+                                label_positions[i][0] += shift
 
-        for i in range(len(loc)):
-            lx, ly = label_positions[i]
-            label_bbox = dict(boxstyle='round,pad=0.08', facecolor='white', edgecolor='none', alpha=0.85)
-            # Node index (bold black)
-            ax.text(
-                lx, ly + id_to_pkt_gap,
-                f"{i}",
-                fontsize=8, fontweight='bold', color='black',
-                ha='center', va='bottom', zorder=7,
-                bbox=label_bbox,
-            )
-            # Packet count (red)
-            ax.text(
-                lx, ly,
-                f"({int(packets[i])})",
-                fontsize=6.5, color='red',
-                ha='center', va='bottom', zorder=7,
-                bbox=label_bbox,
-            )
+            for i in range(len(loc)):
+                lx, ly = label_positions[i]
+                label_bbox = dict(boxstyle='round,pad=0.08', facecolor='white', edgecolor='none', alpha=0.85)
+                # Node index (bold black)
+                ax.text(
+                    lx, ly + id_to_pkt_gap,
+                    f"{i}",
+                    fontsize=8, fontweight='bold', color='black',
+                    ha='center', va='bottom', zorder=7,
+                    bbox=label_bbox,
+                )
+                # Packet count (red)
+                ax.text(
+                    lx, ly,
+                    f"({int(packets[i])})",
+                    fontsize=6.5, color='red',
+                    ha='center', va='bottom', zorder=7,
+                    bbox=label_bbox,
+                )
 
         # --- Axis styling ---
         ax.set_xlim(-area_size * 0.08, area_size * 1.10)
@@ -304,6 +327,7 @@ def plot_rsn_comparison(
 
     plt.tight_layout()
 
+    os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"Saved: {filename}")
     plt.close()
@@ -365,7 +389,7 @@ def demo():
     plot_rsn_comparison(
         loc, packets, radius, max_length,
         algo_results,
-        filename="rsn_comparison_demo.png",
+        filename=os.path.join(_DEFAULT_OUT_DIR, "rsn_comparison_demo.png"),
         area_size=area_size,
         scale_factor=scale,
         caption=(
@@ -373,6 +397,8 @@ def demo():
             f"with {N} nodes. "
             f"\u03B5 = 50Wh with a maximum distance of {int(max_length * scale)}m."
         ),
+        panel_size=None,   # auto: 5.5in for N\u226430
+        show_labels=None,  # auto: True for N\u226430
     )
 
 
@@ -387,7 +413,8 @@ def main():
     parser.add_argument("--instance_idx", type=int, default=0)
     parser.add_argument("--no_cuda", action="store_true")
     parser.add_argument("--gurobi_timeout", type=float, default=120)
-    parser.add_argument("--output", type=str, default="rsn_comparison.png")
+    parser.add_argument("--output", type=str,
+                        default=os.path.join(_DEFAULT_OUT_DIR, "rsn_comparison.png"))
     parser.add_argument("--demo", action="store_true")
 
     # Manual tour overrides (comma-separated 0-indexed sensor indices)
@@ -406,6 +433,12 @@ def main():
                         help="Battery power in Wh for caption (default 90)")
     parser.add_argument("--caption", type=str, default=None,
                         help="Full custom caption (overrides auto-generated)")
+
+    # Figure layout
+    parser.add_argument("--panel_size", type=float, default=None,
+                        help="Panel width in inches per algorithm (default: 5.5 for N≤30, 14 for N>30)")
+    parser.add_argument("--no_labels", action="store_true",
+                        help="Suppress node-id/packet labels (default: auto-hidden for N>30)")
 
     args = parser.parse_args()
 
@@ -504,6 +537,8 @@ def main():
         area_size=area_size,
         scale_factor=scale,
         caption=caption,
+        panel_size=args.panel_size,
+        show_labels=(False if args.no_labels else None),
     )
 
 

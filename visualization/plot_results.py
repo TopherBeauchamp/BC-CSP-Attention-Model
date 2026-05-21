@@ -55,9 +55,10 @@ def _parse_budget(text):
     return float(m.group(1).replace('p', '.')) if m else None
 
 
-def load_algo_results(results_root, algo, instance_count):
+def load_algo_results(results_root, algo, instance_count, node_count=None):
     """Return {budget_float: record_dict} for one algorithm / instance-count folder."""
-    folder = os.path.join(results_root, algo, f"{instance_count}_Instances")
+    nodes_suffix = f"_{node_count}_nodes" if node_count is not None else ""
+    folder = os.path.join(results_root, algo, f"{instance_count}_Instances{nodes_suffix}")
     if not os.path.isdir(folder):
         return {}
     out = {}
@@ -227,26 +228,33 @@ def main():
                         help="Root directory containing nco/, pca/, gurobi/ subfolders")
     parser.add_argument('--instance_count', type=int, default=100,
                         help="Instance-count folder to load (100, 1000, 10000)")
-    parser.add_argument('--output_dir', default='images',
+    parser.add_argument('--node_count', type=int, default=None,
+                        help="Node-count suffix to load (e.g. 100 for *_100_nodes folders). "
+                             "Omit to use the legacy folder format without a node suffix.")
+    parser.add_argument('--output_dir', default='images_&_docs',
                         help="Directory to write output figures")
-    parser.add_argument('--chart_name', default='Packet_Nodes_Graph.png',
-                        help="Filename for the packets/nodes bar chart")
-    parser.add_argument('--table_name', default='Time_Table.png',
-                        help="Filename for the timing table figure")
+    parser.add_argument('--chart_name', default=None,
+                        help="Filename for the packets/nodes bar chart (default: auto-generated from instance/node count)")
+    parser.add_argument('--table_name', default=None,
+                        help="Filename for the timing table figure (default: auto-generated from instance/node count)")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
 
+    nodes_suffix = f"_{args.node_count}_nodes" if args.node_count is not None else ""
+    tag = f"{args.instance_count}_instances{nodes_suffix}"
+    chart_name = args.chart_name or f"Packet_Nodes_Graph_{tag}.png"
+    table_name = args.table_name or f"Time_Table_{tag}.png"
     all_results = {}
     for algo in ALGO_ORDER:
-        data = load_algo_results(args.results_dir, algo, args.instance_count)
+        data = load_algo_results(args.results_dir, algo, args.instance_count, args.node_count)
         if data:
             all_results[algo] = data
-            wh = [BUDGET_TO_WH.get(b, '?') for b in sorted(data)]
-            print(f"  {algo:6s}: {len(data)} budget levels -> {wh} Wh")
+            wh = [BUDGET_TO_WH.get(b, f"{b:.2f}") for b in sorted(data)]
+            print(f"  {algo:6s}: {len(data)} budget levels -> {wh}")
         else:
             print(f"  {algo:6s}: no data found in "
-                  f"{args.results_dir}/{algo}/{args.instance_count}_Instances/")
+                  f"{args.results_dir}/{algo}/{args.instance_count}_Instances{nodes_suffix}/")
 
     if not all_results:
         print("No data loaded. Check --results_dir.")
@@ -257,11 +265,11 @@ def main():
 
     plot_packets_and_nodes(
         all_results, all_budgets,
-        os.path.join(args.output_dir, args.chart_name),
+        os.path.join(args.output_dir, chart_name),
     )
     plot_timing_table(
         all_results, all_budgets,
-        os.path.join(args.output_dir, args.table_name),
+        os.path.join(args.output_dir, table_name),
     )
 
 
